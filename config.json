@@ -1,0 +1,23 @@
+{
+  "token": "MTM5NDI2NDQ1MzI4NTAyMzc4NA.GsSbm-.Hf2fNf2lG4u0RqILEk2Gi1T52ktfV2R_kRzD98",
+  "guildId": "1088914769295187990",
+  "clientId":  "1394264453285023784",
+  "channelId": "1088914770712870995",
+  "adminRoleIds": ["1088954190845456435", "ROLE_ID_2"], 
+  "groupName": "Bring Them Dead",
+  "prefix": "!",
+  "botName": "AKATB",
+  "accountPassword": "Aa78Bc75",
+  "groupChatOnly": true,
+   "raksampHost": "127.0.0.1",
+   "knownGroups": [],
+   "defaultGroup": "Bring Them Dead",
+   "adminPlayers": ["stavilinski(141)"],
+"adminRanks": ["XOX", "Co-Leader", "General"],
+"requiredRoles": {
+    "normal": ["Co-Leader"],
+    "admin": ["Leader","Owner"]
+  },
+  "raksampPort": 5001,
+  "incomingPort": 3003
+}
