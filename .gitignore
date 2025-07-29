@@ -4,6 +4,8 @@ node_modules/
 # Logs
 logs
 *.log
+*.zip
+config.json
 data/*.log
 data/*.json
 # OS files
