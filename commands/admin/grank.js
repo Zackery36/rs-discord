@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const axios = require('axios');
-const DialogPaginator = require('../../utils/DialogPaginator');
 const InputSanitizer = require('../../utils/inputSanitizer');
+const colorConverter = require('../../utils/colorConverter');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -17,35 +17,109 @@ module.exports = {
          .setRequired(true)),
   
   async execute(interaction, config) {
-    const isEphemeral = !config.showPublicResponses;
-    const alreadyHandled = interaction.deferred || interaction.replied;
-    
-    if (!alreadyHandled) {
-      await interaction.deferReply({ ephemeral: isEphemeral });
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
-
+    
     const client = interaction.client;
     const playerName = interaction.options.getString('player');
     const newRank = interaction.options.getString('rank');
-    const groupName = config.defaultGroup || 'Your Group';
+    const groupName = config.groupName || 'Your Group';
     
+    // Utility to wait for dialog
+    function waitForDialog(filter, timeout) {
+      return new Promise(resolve => {
+        const handler = dlg => {
+          if (filter(dlg)) {
+            cleanup();
+            resolve(dlg);
+          }
+        };
+        const timer = setTimeout(() => {
+          cleanup();
+          resolve(null);
+        }, timeout);
+        function cleanup() {
+          clearTimeout(timer);
+          client.off('dialog', handler);
+        }
+        client.on('dialog', handler);
+      });
+    }
+
     try {
       const baseUrl = `http://${config.raksampHost}:${config.raksampPort}/`;
-      const paginator = new DialogPaginator(client, config);
       
-      // Send GRANK command
+      // 1) Send /grank command
       await axios.post(
         baseUrl,
         `command=${encodeURIComponent('/grank')}`,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      // Search for player
-      const playerResult = await paginator.searchPlayerInGroup(playerName, groupName);
+      // 2) Wait for group member list dialog
+      const memberDialog = await waitForDialog(
+        d => d.title.toLowerCase().includes(groupName.toLowerCase()),
+        8000
+      );
       
-      // Send player selection
-      const playerCmd = `sendDialogResponse|${playerResult.dialog.dialogId}|1|${playerResult.index}|${playerResult.playerEntry}`;
+      if (!memberDialog) {
+        return await interaction.editReply(`❌ ${groupName} member list dialog did not arrive within timeout.`);
+      }
+
+      // 3) Parse member list
+      const cleanMemberInfo = colorConverter.stripSampColors(memberDialog.info)
+        .replace(/[{}]/g, '')
+        .replace(/<[A-F0-9]{6}>/gi, '');
+      
+      const memberLines = cleanMemberInfo
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+      
+      console.log('Member list lines:', memberLines);
+        
+      // Find matching player
+      let playerIndex = -1;
+      let playerEntry = null;
+      let playerNameFound = null;
+      
+      for (let i = 0; i < memberLines.length; i++) {
+        const line = memberLines[i];
+        // Extract the player name and full prefix
+        const match = line.match(/^(\d+)\s+([^\s]+)/);
+        
+        if (match) {
+          const num = match[1];
+          const name = match[2].trim();
+          
+          if (name.toLowerCase().includes(playerName.toLowerCase())) {
+            playerIndex = i;
+            playerNameFound = name;
+            
+            // Get the full line prefix (e.g., "3 DR.Roman")
+            const prefix = line.substring(0, line.indexOf(name) + name.length).trim();
+            playerEntry = prefix;
+            
+            console.log(`Found player: ${playerNameFound} as ${playerEntry}`);
+            break;
+          }
+        }
+      }
+      
+      if (playerIndex === -1) {
+        return await interaction.editReply(`❌ Player "${playerName}" not found in ${groupName} member list.`);
+      }
+
+      // 4) Send player selection
+      const playerCmd = `sendDialogResponse|${memberDialog.dialogId}|1|${playerIndex}|${playerEntry}`;
+      console.log(`Sending player command: ${playerCmd}`);
+      
       const safePlayerCmd = InputSanitizer.safeStringForRakSAMP(playerCmd);
+      
+      if (!safePlayerCmd) {
+        return await interaction.editReply('❌ Player selection command failed sanitization.');
+      }
       
       await axios.post(
         baseUrl,
@@ -53,46 +127,68 @@ module.exports = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      // Wait for rank list dialog
-      const rankDialog = await new Promise((resolve) => {
-        const timer = setTimeout(() => resolve(null), 5000);
-        const handler = dlg => {
-          if (dlg.title.toLowerCase().includes('group rank')) {
-            clearTimeout(timer);
-            client.off('dialog', handler);
-            resolve(dlg);
-          }
-        };
-        client.on('dialog', handler);
-      });
+      // 5) Wait for rank list dialog
+      const rankDialog = await waitForDialog(
+        d => d.title.toLowerCase().includes('group rank'),
+        5000
+      );
       
-      if (!rankDialog) throw new Error('Group rank list dialog did not appear');
+      if (!rankDialog) {
+        return await interaction.editReply('❌ Group rank list dialog did not appear.');
+      }
 
-      // Parse rank list
-      const cleanRankInfo = rankDialog.info.replace(/[{}]/g, '').replace(/<[A-F0-9]{6}>/gi, '');
-      const rankLines = cleanRankInfo.split('\n').map(l => l.trim()).filter(Boolean);
+      // 6) Parse rank list
+      const cleanRankInfo = colorConverter.stripSampColors(rankDialog.info)
+        .replace(/[{}]/g, '')
+        .replace(/<[A-F0-9]{6}>/gi, '');
       
+      const rankLines = cleanRankInfo
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+      
+      console.log('Rank list lines:', rankLines);
+        
+      // Find matching rank
       let rankIndex = -1;
+      let rankEntry = null;
       let rankNameFound = null;
       
       for (let i = 0; i < rankLines.length; i++) {
         const line = rankLines[i];
+        // Extract rank ID and name
         const match = line.match(/^(\d+)\s+(.+)$/);
+        
         if (match) {
+          const rankId = match[1];
           const rankName = match[2].trim();
+          
           if (rankName.toLowerCase().includes(newRank.toLowerCase())) {
             rankIndex = i;
             rankNameFound = rankName;
+            
+            // Get the full line (e.g., "15 RankName")
+            rankEntry = line;
+            
+            console.log(`Found rank: ${rankNameFound} as ${rankEntry}`);
             break;
           }
         }
       }
       
-      if (rankIndex === -1) throw new Error(`Rank "${newRank}" not found`);
+      if (rankIndex === -1) {
+        return await interaction.editReply(`❌ Rank "${newRank}" not found in group ranks.`);
+      }
 
-      // Send rank selection
-      const rankCmd = `sendDialogResponse|${rankDialog.dialogId}|1|${rankIndex}|${rankNameFound}`;
+      // 7) Send rank selection - FIXED TO USE FULL RANK ENTRY
+      const rankCmd = `sendDialogResponse|${rankDialog.dialogId}|1|${rankIndex}|${rankEntry}`;
+      console.log(`Sending rank command: ${rankCmd}`);
+      
       const safeRankCmd = InputSanitizer.safeStringForRakSAMP(rankCmd);
+      
+      if (!safeRankCmd) {
+        return await interaction.editReply('❌ Rank selection command failed sanitization.');
+      }
       
       await axios.post(
         baseUrl,
@@ -100,28 +196,11 @@ module.exports = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      const successMsg = `✅ Rank updated: Set "${playerResult.playerNameFound}" to "${rankNameFound}" in ${groupName}`;
-      
-      if (alreadyHandled) {
-        await interaction.followUp({ content: successMsg, ephemeral: isEphemeral });
-      } else {
-        await interaction.editReply(successMsg);
-      }
+      await interaction.editReply(`✅ Rank updated: Set "${playerNameFound}" to "${rankNameFound}" in ${groupName}`);
 
     } catch (err) {
-      let errorMsg = '❌ Failed to set group rank.';
-      if (err.message.includes('Player not found')) {
-        errorMsg = `❌ Player "${playerName}" not found in ${groupName}`;
-      }
-      else if (err.message.includes('Rank not found')) {
-        errorMsg = `❌ Rank "${newRank}" not found in ${groupName}`;
-      }
-      
-      if (alreadyHandled) {
-        await interaction.followUp({ content: errorMsg, ephemeral: true });
-      } else {
-        await interaction.editReply(errorMsg);
-      }
+      console.error('[grank] Error:', err);
+      await interaction.editReply('❌ Failed to set group rank. Check logs for details.');
     }
   }
 };
