@@ -67,7 +67,7 @@ module.exports = {
         return await interaction.editReply(`❌ ${groupName} member list dialog did not arrive within timeout.`);
       }
 
-      // Player search with pagination support
+      // Player search with pagination
       let playerIndex = -1;
       let playerEntry = null;
       let playerNameFound = null;
@@ -75,7 +75,7 @@ module.exports = {
       const maxPages = 8;
 
       while (currentPage < maxPages) {
-        // 3) Parse member list
+        // Parse current page
         const cleanMemberInfo = colorConverter.stripSampColors(memberDialog.info)
           .replace(/[{}]/g, '')
           .replace(/<[A-F0-9]{6}>/gi, '');
@@ -85,16 +85,13 @@ module.exports = {
           .map(l => l.trim())
           .filter(Boolean);
         
-        console.log(`Page ${currentPage + 1} member lines:`, memberLines);
-          
-        // Find matching player in current page
+        // Search for player in current page
         for (let i = 0; i < memberLines.length; i++) {
           const line = memberLines[i];
           // Extract the player name and full prefix
           const match = line.match(/^(\d+)\s+([^\s]+)/);
           
           if (match) {
-            const num = match[1];
             const name = match[2].trim();
             
             if (name.toLowerCase().includes(playerName.toLowerCase())) {
@@ -104,8 +101,6 @@ module.exports = {
               // Get the full line prefix (e.g., "3 DR.Roman")
               const prefix = line.substring(0, line.indexOf(name) + name.length).trim();
               playerEntry = prefix;
-              
-              console.log(`Found player: ${playerNameFound} as ${playerEntry}`);
               break;
             }
           }
@@ -114,24 +109,9 @@ module.exports = {
         // Exit loop if player found
         if (playerIndex !== -1) break;
 
-        // Check if we can go to next page
-        const hasNextButton = memberDialog.buttons && 
-                              memberDialog.buttons[0] && 
-                              memberDialog.buttons[0].toLowerCase() === 'next';
-        
-        if (!hasNextButton) {
-          console.log('No next button available');
-          break;
-        }
-
         // Go to next page
-        console.log(`Going to page ${currentPage + 2}`);
         const nextCmd = `sendDialogResponse|${memberDialog.dialogId}|0|0|Next`;
         const safeNextCmd = InputSanitizer.safeStringForRakSAMP(nextCmd);
-        
-        if (!safeNextCmd) {
-          return await interaction.editReply('❌ Next page command failed sanitization.');
-        }
         
         await axios.post(
           baseUrl,
@@ -142,25 +122,22 @@ module.exports = {
         // Wait for next page dialog
         memberDialog = await waitForDialog(
           d => d.title.toLowerCase().includes(groupName.toLowerCase()),
-          5000
+          3000
         );
         
-        if (!memberDialog) {
-          console.log('Next page dialog not received');
-          break;
-        }
+        // If next page doesn't arrive, stop searching
+        if (!memberDialog) break;
         
         currentPage++;
       }
       
+      // Player not found after all pages
       if (playerIndex === -1) {
         return await interaction.editReply(`❌ Player "${playerName}" not found in ${groupName} after ${currentPage + 1} pages.`);
       }
 
-      // 4) Send player selection
+      // 3) Send player selection
       const playerCmd = `sendDialogResponse|${memberDialog.dialogId}|1|${playerIndex}|${playerEntry}`;
-      console.log(`Sending player command: ${playerCmd}`);
-      
       const safePlayerCmd = InputSanitizer.safeStringForRakSAMP(playerCmd);
       
       if (!safePlayerCmd) {
@@ -173,7 +150,7 @@ module.exports = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      // 5) Wait for rank list dialog
+      // 4) Wait for rank list dialog
       const rankDialog = await waitForDialog(
         d => d.title.toLowerCase().includes('group rank'),
         5000
@@ -183,7 +160,7 @@ module.exports = {
         return await interaction.editReply('❌ Group rank list dialog did not appear.');
       }
 
-      // 6) Parse rank list
+      // 5) Parse rank list
       const cleanRankInfo = colorConverter.stripSampColors(rankDialog.info)
         .replace(/[{}]/g, '')
         .replace(/<[A-F0-9]{6}>/gi, '');
@@ -193,8 +170,6 @@ module.exports = {
         .map(l => l.trim())
         .filter(Boolean);
       
-      console.log('Rank list lines:', rankLines);
-        
       // Find matching rank
       let rankIndex = -1;
       let rankEntry = null;
@@ -206,17 +181,12 @@ module.exports = {
         const match = line.match(/^(\d+)\s+(.+)$/);
         
         if (match) {
-          const rankId = match[1];
           const rankName = match[2].trim();
           
           if (rankName.toLowerCase().includes(newRank.toLowerCase())) {
             rankIndex = i;
             rankNameFound = rankName;
-            
-            // Get the full line (e.g., "15 RankName")
             rankEntry = line;
-            
-            console.log(`Found rank: ${rankNameFound} as ${rankEntry}`);
             break;
           }
         }
@@ -226,10 +196,8 @@ module.exports = {
         return await interaction.editReply(`❌ Rank "${newRank}" not found in group ranks.`);
       }
 
-      // 7) Send rank selection
+      // 6) Send rank selection
       const rankCmd = `sendDialogResponse|${rankDialog.dialogId}|1|${rankIndex}|${rankEntry}`;
-      console.log(`Sending rank command: ${rankCmd}`);
-      
       const safeRankCmd = InputSanitizer.safeStringForRakSAMP(rankCmd);
       
       if (!safeRankCmd) {
