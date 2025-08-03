@@ -15,3 +15,11 @@ Thumbs.db
 
 # Environment files
 .env
+# Data files (do not track)
+data/players.json
+data/zones.json
+
+# Log files (do not track)
+logs/chat.log
+logs/gchat.log
+logs/group_events.log
