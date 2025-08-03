@@ -16,7 +16,7 @@ module.exports = {
         const baseUrl = `http://${config.raksampHost}:${config.raksampPort}/`;
         
         try {
-            // Helper to wait for dialog
+            // Utility to wait for dialog
             const waitForDialog = (filter, timeout) => {
                 return new Promise(resolve => {
                     const handler = dlg => {
@@ -51,67 +51,81 @@ module.exports = {
             }
 
             // Player search with pagination
-            let playerFound = false;
             let playerIndex = -1;
-            let playerEntry = '';
-            let playerNameFound = '';
+            let playerEntry = null;
+            let playerNameFound = null;
             let currentPage = 0;
             const maxPages = 8;
 
-            while (currentPage < maxPages && !playerFound) {
-                // Clean and parse dialog
-                const cleanInfo = colorConverter.stripSampColors(memberDialog.info)
+            while (currentPage < maxPages) {
+                // Parse current page
+                const cleanMemberInfo = colorConverter.stripSampColors(memberDialog.info)
                     .replace(/[{}]/g, '')
                     .replace(/<[A-F0-9]{6}>/gi, '');
                 
-                const lines = cleanInfo.split('\n').map(l => l.trim()).filter(Boolean);
+                const memberLines = cleanMemberInfo
+                    .split('\n')
+                    .map(l => l.trim())
+                    .filter(Boolean);
                 
-                // Search for player
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
+                // Search for player in current page
+                for (let i = 0; i < memberLines.length; i++) {
+                    const line = memberLines[i];
+                    // Extract the player name and full prefix
                     const match = line.match(/^(\d+)\s+([^\s]+)/);
                     
                     if (match) {
                         const name = match[2].trim();
+                        
                         if (name.toLowerCase().includes(playerName.toLowerCase())) {
                             playerIndex = i;
                             playerNameFound = name;
-                            playerEntry = line.substring(0, line.indexOf(name) + name);
-                            playerFound = true;
+                            
+                            // Get the full line prefix (e.g., "3 DR.Roman")
+                            const prefix = line.substring(0, line.indexOf(name) + name.length).trim();
+                            playerEntry = prefix;
                             break;
                         }
                     }
                 }
+
+                // Exit loop if player found
+                if (playerIndex !== -1) break;
+
+                // Go to next page
+                const nextCmd = `sendDialogResponse|${memberDialog.dialogId}|0|0|Next`;
+                const safeNextCmd = InputSanitizer.safeStringForRakSAMP(nextCmd);
                 
-                // If not found, go to next page
-                if (!playerFound) {
-                    const nextCmd = `sendDialogResponse|${memberDialog.dialogId}|0|0|Next`;
-                    await axios.post(
-                        baseUrl,
-                        `botcommand=${encodeURIComponent(InputSanitizer.safeStringForRakSAMP(nextCmd))}`,
-                        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-                    );
-                    
-                    // Wait for next dialog
-                    memberDialog = await waitForDialog(
-                        d => d.title.toLowerCase().includes(groupName.toLowerCase()),
-                        3000
-                    );
-                    
-                    if (!memberDialog) break;
-                    currentPage++;
-                }
+                await axios.post(
+                    baseUrl,
+                    `botcommand=${encodeURIComponent(safeNextCmd)}`,
+                    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+                );
+
+                // Wait for next page dialog
+                memberDialog = await waitForDialog(
+                    d => d.title.toLowerCase().includes(groupName.toLowerCase()),
+                    3000
+                );
+                
+                // If next page doesn't arrive, stop searching
+                if (!memberDialog) break;
+                
+                currentPage++;
             }
             
-            if (!playerFound) {
-                return `❌ Player "${playerName}" not found after ${currentPage + 1} pages`;
+            // Player not found after all pages
+            if (playerIndex === -1) {
+                return `❌ Player "${playerName}" not found in ${groupName} after ${currentPage + 1} pages.`;
             }
 
-            // Select player
+            // Send player selection
             const playerCmd = `sendDialogResponse|${memberDialog.dialogId}|1|${playerIndex}|${playerEntry}`;
+            const safePlayerCmd = InputSanitizer.safeStringForRakSAMP(playerCmd);
+            
             await axios.post(
                 baseUrl,
-                `botcommand=${encodeURIComponent(InputSanitizer.safeStringForRakSAMP(playerCmd))}`,
+                `botcommand=${encodeURIComponent(safePlayerCmd)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
 

@@ -10,10 +10,10 @@ module.exports = {
                 return 'No attackable zones available';
             }
             
-            let response = '';
+            let response = 'ZA : ';
             for (const [groupName, zones] of Object.entries(attackableZones)) {
                 const tag = ZoneManager.getGroupTag(groupName) || groupName.substring(0, 3).toUpperCase();
-                response += `[${tag}${zones.length}]`;
+                response += `[${tag} ${zones.length}]`;
             }
             
             return response;
