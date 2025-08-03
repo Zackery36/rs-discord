@@ -29,14 +29,13 @@ module.exports = {
         
         try {
             // Send initial response
-            const initialResponse = `Going to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `message=${encodeURIComponent(`!${initialResponse}`)}`,
+                `message=${encodeURIComponent(`!Going to zone #${zoneId} of ${groupName}. You have 40 seconds.`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
-            // Teleport to zone
+            // Teleport to zone - send as COMMAND
             const teleportCmd = `/pos ${position.x} ${position.y} ${position.z}`;
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
@@ -64,7 +63,7 @@ module.exports = {
                 }
             }, 40000); // 40 seconds
             
-            return `eleported to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
+            return `Teleported to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
         } catch (e) {
             return `Failed to teleport: ${e.message}`;
         }
