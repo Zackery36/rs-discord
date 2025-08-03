@@ -2,12 +2,13 @@
 node_modules/
 
 # Logs
-logs
+logs/
 *.log
 *.zip
 config.json
 data/*.log
 data/*.json
+
 # OS files
 .DS_Store
 Thumbs.db

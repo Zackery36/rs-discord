@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const axios = require('axios');
 const DialogPaginator = require('../../utils/DialogPaginator');
 const InputSanitizer = require('../../utils/inputSanitizer');
@@ -18,10 +18,12 @@ module.exports = {
   
   async execute(interaction, config) {
     const isEphemeral = !config.showPublicResponses;
-    await interaction.deferReply({ 
-        flags: isEphemeral ? MessageFlags.Ephemeral : 0 
-    });
+    const alreadyHandled = interaction.deferred || interaction.replied;
     
+    if (!alreadyHandled) {
+      await interaction.deferReply({ ephemeral: isEphemeral });
+    }
+
     const client = interaction.client;
     const playerName = interaction.options.getString('player');
     const newRank = interaction.options.getString('rank');
@@ -98,14 +100,28 @@ module.exports = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      await interaction.editReply(`✅ Rank updated: Set "${playerResult.playerNameFound}" to "${rankNameFound}" in ${groupName}`);
+      const successMsg = `✅ Rank updated: Set "${playerResult.playerNameFound}" to "${rankNameFound}" in ${groupName}`;
+      
+      if (alreadyHandled) {
+        await interaction.followUp({ content: successMsg, ephemeral: isEphemeral });
+      } else {
+        await interaction.editReply(successMsg);
+      }
 
     } catch (err) {
       let errorMsg = '❌ Failed to set group rank.';
       if (err.message.includes('Player not found')) {
         errorMsg = `❌ Player "${playerName}" not found in ${groupName}`;
       }
-      await interaction.editReply(errorMsg);
+      else if (err.message.includes('Rank not found')) {
+        errorMsg = `❌ Rank "${newRank}" not found in ${groupName}`;
+      }
+      
+      if (alreadyHandled) {
+        await interaction.followUp({ content: errorMsg, ephemeral: true });
+      } else {
+        await interaction.editReply(errorMsg);
+      }
     }
   }
 };

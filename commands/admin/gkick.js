@@ -17,8 +17,13 @@ module.exports = {
         .setRequired(true)),
 
   async execute(interaction, config) {
-    await interaction.deferReply({ ephemeral: true });
+    // Check if already handled
+    const alreadyHandled = interaction.deferred || interaction.replied;
     
+    if (!alreadyHandled) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
     const client = interaction.client;
     const playerName = interaction.options.getString('player');
     const reason = interaction.options.getString('reason');
@@ -66,14 +71,25 @@ module.exports = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      await interaction.editReply(`✅ Player "${playerResult.playerNameFound}" kicked from ${groupName} for: ${reason}`);
+      const successMsg = `✅ Player "${playerResult.playerNameFound}" kicked from ${groupName} for: ${reason}`;
+      
+      if (alreadyHandled) {
+        await interaction.followUp({ content: successMsg, ephemeral: true });
+      } else {
+        await interaction.editReply(successMsg);
+      }
 
     } catch (err) {
       let errorMsg = '❌ Failed to kick player.';
       if (err.message.includes('Player not found')) {
         errorMsg = `❌ Player "${playerName}" not found in ${groupName}`;
       }
-      await interaction.editReply(errorMsg);
+      
+      if (alreadyHandled) {
+        await interaction.followUp({ content: errorMsg, ephemeral: true });
+      } else {
+        await interaction.editReply(errorMsg);
+      }
     }
   }
 };

@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const axios = require('axios');
 const DialogPaginator = require('../../utils/DialogPaginator');
 const InputSanitizer = require('../../utils/inputSanitizer');
@@ -18,9 +18,24 @@ module.exports = {
   
   async execute(interaction, config) {
     const isEphemeral = !config.showPublicResponses;
-    await interaction.deferReply({ 
-        flags: isEphemeral ? MessageFlags.Ephemeral : 0 
-    });
+    
+    // Create a safe deferral function
+    const safeDefer = async () => {
+      try {
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferReply({ ephemeral: isEphemeral });
+          return true;
+        }
+        return false;
+      } catch (e) {
+        if (e.code === 'InteractionAlreadyReplied') {
+          return false;
+        }
+        throw e;
+      }
+    };
+
+    const wasDeferred = await safeDefer();
     
     const client = interaction.client;
     const playerName = interaction.options.getString('player');
@@ -94,14 +109,31 @@ module.exports = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      await interaction.editReply(`✅ Role updated: Set "${playerResult.playerNameFound}" to "${roleNameFound}" in ${groupName}`);
+      const successMsg = `✅ Role updated: Set "${playerResult.playerNameFound}" to "${roleNameFound}" in ${groupName}`;
+      
+      if (interaction.replied) {
+        await interaction.followUp({ content: successMsg, ephemeral: isEphemeral });
+      } else {
+        await interaction.editReply(successMsg);
+      }
 
     } catch (err) {
       let errorMsg = '❌ Failed to set group role.';
       if (err.message.includes('Player not found')) {
         errorMsg = `❌ Player "${playerName}" not found in ${groupName}`;
       }
-      await interaction.editReply(errorMsg);
+      else if (err.message.includes('Role not found')) {
+        errorMsg = `❌ Role "${newRole}" not found in ${groupName}`;
+      }
+      
+      // Handle errors based on current interaction state
+      if (interaction.replied) {
+        await interaction.followUp({ content: errorMsg, ephemeral: true });
+      } else if (interaction.deferred) {
+        await interaction.editReply(errorMsg);
+      } else {
+        await interaction.reply({ content: errorMsg, ephemeral: true });
+      }
     }
   }
 };
