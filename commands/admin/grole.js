@@ -187,9 +187,13 @@ module.exports = {
         roleDialog.dialogId, roleIndex, newRole
       );
 
-      await interaction.editReply(
-        `✅ Role updated: Set "${playerResult.playerNameFound}" to "${newRole}" in ${groupName}`
-      );
+      const successMsg = `✅ Role updated: Set "${playerResult.playerNameFound}" to "${roleNameFound}" in ${groupName}`;
+      
+      if (interaction.replied) {
+        await interaction.followUp({ content: successMsg, ephemeral: isEphemeral });
+      } else {
+        await interaction.editReply(successMsg);
+      }
 
     } catch (err) {
       let errorMsg = '❌ Failed to set group role.';
