@@ -152,7 +152,7 @@ module.exports = {
 
       // 4) Wait for rank list dialog
       const rankDialog = await waitForDialog(
-        d => d.title.toLowerCase().includes('group role'),
+        d => d.title.toLowerCase().includes('uif - group role'),
         5000
       );
       
