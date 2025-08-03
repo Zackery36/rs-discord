@@ -13,7 +13,7 @@ module.exports = {
         const y = parseFloat(args[2]);
         const z = parseFloat(args[3]);
         
-        // Save position
+        // Save position to czones.json
         ZoneManager.addZonePosition(zoneId, x, y, z);
         return `✅ Mapped position for zone #${zoneId}`;
     }

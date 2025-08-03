@@ -11,9 +11,11 @@ class ZoneManager {
         this.activeWars = new Map();
         this.lockedAttacks = new Map();
         this.filePath = path.join(__dirname, '../data/zones.json');
+        this.cZonesPath = path.join(__dirname, '../data/czones.json');
         this.cooldownDuration = 6 * 60 * 60 * 1000;
         this.attackWindow = 60 * 60 * 1000;
         this.loadZones();
+        this.loadCZonePositions();
     }
 
     loadZones() {
@@ -42,6 +44,24 @@ class ZoneManager {
         }
     }
 
+    loadCZonePositions() {
+        if (fs.existsSync(this.cZonesPath)) {
+            try {
+                const cZonesData = JSON.parse(fs.readFileSync(this.cZonesPath));
+                for (const [zoneId, zoneData] of cZonesData) {
+                    const existingZone = this.zones.get(zoneId) || {};
+                    this.zones.set(zoneId, {
+                        ...existingZone,
+                        position: zoneData.position
+                    });
+                }
+                console.log(`[ZoneManager] Loaded ${cZonesData.length} zone positions`);
+            } catch (e) {
+                console.error('[ZoneManager] Failed to load czones:', e);
+            }
+        }
+    }
+
     saveZones() {
         const groupZonesArray = Array.from(this.groupZones.entries())
             .map(([group, zones]) => [group, Array.from(zones)]);
@@ -57,6 +77,16 @@ class ZoneManager {
         };
         
         fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2));
+    }
+
+    saveCZonePositions() {
+        const positions = [];
+        for (const [zoneId, zoneData] of this.zones) {
+            if (zoneData.position) {
+                positions.push([zoneId, { position: zoneData.position }]);
+            }
+        }
+        fs.writeFileSync(this.cZonesPath, JSON.stringify(positions, null, 2));
     }
 
     recordZoneCapture(zoneId, attackerGroup, defenderGroup) {
@@ -100,7 +130,7 @@ class ZoneManager {
         const zone = this.zones.get(zoneId) || {};
         zone.position = { x, y, z };
         this.zones.set(zoneId, zone);
-        this.saveZones();
+        this.saveCZonePositions();  // Save to czones.json
         return true;
     }
 
