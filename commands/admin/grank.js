@@ -58,7 +58,7 @@ module.exports = {
       );
 
       // 2) Wait for group member list dialog
-      const memberDialog = await waitForDialog(
+      let memberDialog = await waitForDialog(
         d => d.title.toLowerCase().includes(groupName.toLowerCase()),
         8000
       );
@@ -67,48 +67,94 @@ module.exports = {
         return await interaction.editReply(`❌ ${groupName} member list dialog did not arrive within timeout.`);
       }
 
-      // 3) Parse member list
-      const cleanMemberInfo = colorConverter.stripSampColors(memberDialog.info)
-        .replace(/[{}]/g, '')
-        .replace(/<[A-F0-9]{6}>/gi, '');
-      
-      const memberLines = cleanMemberInfo
-        .split('\n')
-        .map(l => l.trim())
-        .filter(Boolean);
-      
-      console.log('Member list lines:', memberLines);
-        
-      // Find matching player
+      // Player search with pagination support
       let playerIndex = -1;
       let playerEntry = null;
       let playerNameFound = null;
-      
-      for (let i = 0; i < memberLines.length; i++) {
-        const line = memberLines[i];
-        // Extract the player name and full prefix
-        const match = line.match(/^(\d+)\s+([^\s]+)/);
+      let currentPage = 0;
+      const maxPages = 8;
+
+      while (currentPage < maxPages) {
+        // 3) Parse member list
+        const cleanMemberInfo = colorConverter.stripSampColors(memberDialog.info)
+          .replace(/[{}]/g, '')
+          .replace(/<[A-F0-9]{6}>/gi, '');
         
-        if (match) {
-          const num = match[1];
-          const name = match[2].trim();
+        const memberLines = cleanMemberInfo
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
+        
+        console.log(`Page ${currentPage + 1} member lines:`, memberLines);
           
-          if (name.toLowerCase().includes(playerName.toLowerCase())) {
-            playerIndex = i;
-            playerNameFound = name;
+        // Find matching player in current page
+        for (let i = 0; i < memberLines.length; i++) {
+          const line = memberLines[i];
+          // Extract the player name and full prefix
+          const match = line.match(/^(\d+)\s+([^\s]+)/);
+          
+          if (match) {
+            const num = match[1];
+            const name = match[2].trim();
             
-            // Get the full line prefix (e.g., "3 DR.Roman")
-            const prefix = line.substring(0, line.indexOf(name) + name.length).trim();
-            playerEntry = prefix;
-            
-            console.log(`Found player: ${playerNameFound} as ${playerEntry}`);
-            break;
+            if (name.toLowerCase().includes(playerName.toLowerCase())) {
+              playerIndex = i;
+              playerNameFound = name;
+              
+              // Get the full line prefix (e.g., "3 DR.Roman")
+              const prefix = line.substring(0, line.indexOf(name) + name.length).trim();
+              playerEntry = prefix;
+              
+              console.log(`Found player: ${playerNameFound} as ${playerEntry}`);
+              break;
+            }
           }
         }
+
+        // Exit loop if player found
+        if (playerIndex !== -1) break;
+
+        // Check if we can go to next page
+        const hasNextButton = memberDialog.buttons && 
+                              memberDialog.buttons[0] && 
+                              memberDialog.buttons[0].toLowerCase() === 'next';
+        
+        if (!hasNextButton) {
+          console.log('No next button available');
+          break;
+        }
+
+        // Go to next page
+        console.log(`Going to page ${currentPage + 2}`);
+        const nextCmd = `sendDialogResponse|${memberDialog.dialogId}|0|0|Next`;
+        const safeNextCmd = InputSanitizer.safeStringForRakSAMP(nextCmd);
+        
+        if (!safeNextCmd) {
+          return await interaction.editReply('❌ Next page command failed sanitization.');
+        }
+        
+        await axios.post(
+          baseUrl,
+          `botcommand=${encodeURIComponent(safeNextCmd)}`,
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        // Wait for next page dialog
+        memberDialog = await waitForDialog(
+          d => d.title.toLowerCase().includes(groupName.toLowerCase()),
+          5000
+        );
+        
+        if (!memberDialog) {
+          console.log('Next page dialog not received');
+          break;
+        }
+        
+        currentPage++;
       }
       
       if (playerIndex === -1) {
-        return await interaction.editReply(`❌ Player "${playerName}" not found in ${groupName} member list.`);
+        return await interaction.editReply(`❌ Player "${playerName}" not found in ${groupName} after ${currentPage + 1} pages.`);
       }
 
       // 4) Send player selection
@@ -180,7 +226,7 @@ module.exports = {
         return await interaction.editReply(`❌ Rank "${newRank}" not found in group ranks.`);
       }
 
-      // 7) Send rank selection - FIXED TO USE FULL RANK ENTRY
+      // 7) Send rank selection
       const rankCmd = `sendDialogResponse|${rankDialog.dialogId}|1|${rankIndex}|${rankEntry}`;
       console.log(`Sending rank command: ${rankCmd}`);
       
