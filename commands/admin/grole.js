@@ -9,12 +9,12 @@ module.exports = {
     .setDescription('Set a player\'s group role (Admin only)')
     .addStringOption(opt =>
       opt.setName('player')
-         .setDescription('Player name')
-         .setRequired(true))
+        .setDescription('Player name')
+        .setRequired(true))
     .addStringOption(opt =>
-      opt.setName('rank')
-         .setDescription('New role name')
-         .setRequired(true)),
+      opt.setName('role')
+        .setDescription('New role name')
+        .setRequired(true)),
   
   async execute(interaction, config) {
     if (!interaction.replied && !interaction.deferred) {
@@ -23,7 +23,7 @@ module.exports = {
     
     const client = interaction.client;
     const playerName = interaction.options.getString('player');
-    const newRank = interaction.options.getString('rank');
+    const newRole = interaction.options.getString('role');
     const groupName = config.groupName || 'Your Group';
     
     // Utility to wait for dialog
@@ -50,10 +50,10 @@ module.exports = {
     try {
       const baseUrl = `http://${config.raksampHost}:${config.raksampPort}/`;
       
-      // 1) Send /grank command
+      // 1) Send /grole command
       await axios.post(
         baseUrl,
-        `command=${encodeURIComponent('/grank')}`,
+        `command=${encodeURIComponent('/grole')}`,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
@@ -88,7 +88,7 @@ module.exports = {
         // Search for player in current page
         for (let i = 0; i < memberLines.length; i++) {
           const line = memberLines[i];
-          // Extract the player name and full prefix
+          // Extract the player name
           const match = line.match(/^(\d+)\s+([^\s]+)/);
           
           if (match) {
@@ -98,7 +98,7 @@ module.exports = {
               playerIndex = i;
               playerNameFound = name;
               
-              // Get the full line prefix (e.g., "3 DR.Roman")
+              // Get the full line prefix
               const prefix = line.substring(0, line.indexOf(name) + name.length).trim();
               playerEntry = prefix;
               break;
@@ -140,81 +140,64 @@ module.exports = {
       const playerCmd = `sendDialogResponse|${memberDialog.dialogId}|1|${playerIndex}|${playerEntry}`;
       const safePlayerCmd = InputSanitizer.safeStringForRakSAMP(playerCmd);
       
-      if (!safePlayerCmd) {
-        return await interaction.editReply('❌ Player selection command failed sanitization.');
-      }
-      
       await axios.post(
         baseUrl,
         `botcommand=${encodeURIComponent(safePlayerCmd)}`,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      // 4) Wait for rank list dialog
-      const rankDialog = await waitForDialog(
-        d => d.title.toLowerCase().includes('uif - group role'),
+      // 4) Wait for role selection dialog
+      const roleDialog = await waitForDialog(
+        d => d.title.toLowerCase().includes('group role'),
         5000
       );
       
-      if (!rankDialog) {
-        return await interaction.editReply('❌ Group rank list dialog did not appear.');
+      if (!roleDialog) {
+        return await interaction.editReply('❌ Group role dialog did not appear.');
       }
 
-      // 5) Parse rank list
-      const cleanRankInfo = colorConverter.stripSampColors(rankDialog.info)
+      // 5) Parse role list
+      const cleanRoleInfo = colorConverter.stripSampColors(roleDialog.info)
         .replace(/[{}]/g, '')
         .replace(/<[A-F0-9]{6}>/gi, '');
       
-      const rankLines = cleanRankInfo
+      const roleLines = cleanRoleInfo
         .split('\n')
         .map(l => l.trim())
         .filter(Boolean);
       
-      // Find matching rank
-      let rankIndex = -1;
-      let rankEntry = null;
-      let rankNameFound = null;
+      // Find matching role
+      let roleIndex = -1;
+      let roleNameFound = null;
       
-      for (let i = 0; i < rankLines.length; i++) {
-        const line = rankLines[i];
-        // Extract rank ID and name
-        const match = line.match(/^(\d+)\s+(.+)$/);
-        
-        if (match) {
-          const rankName = match[2].trim();
-          
-          if (rankName.toLowerCase().includes(newRank.toLowerCase())) {
-            rankIndex = i;
-            rankNameFound = rankName;
-            rankEntry = line;
-            break;
-          }
+      for (let i = 0; i < roleLines.length; i++) {
+        const roleName = roleLines[i].trim();
+        if (roleName.toLowerCase().includes(newRole.toLowerCase())) {
+          roleIndex = i;
+          roleNameFound = roleName;
+          break;
         }
       }
       
-      if (rankIndex === -1) {
-        return await interaction.editReply(`❌ Rank "${newRank}" not found in group ranks.`);
+      if (roleIndex === -1) {
+        return await interaction.editReply(`❌ Role "${newRole}" not found in group roles.`);
       }
 
-      // 6) Send rank selection
-      const rankCmd = `sendDialogResponse|${rankDialog.dialogId}|1|${rankIndex}|${rankEntry}`;
-      const safeRankCmd = InputSanitizer.safeStringForRakSAMP(rankCmd);
-      
-      if (!safeRankCmd) {
-        return await interaction.editReply('❌ Rank selection command failed sanitization.');
-      }
+      // 6) Send role selection
+      const roleCmd = `sendDialogResponse|${roleDialog.dialogId}|1|${roleIndex}|${roleNameFound}`;
+      const safeRoleCmd = InputSanitizer.safeStringForRakSAMP(roleCmd);
       
       await axios.post(
         baseUrl,
-        `botcommand=${encodeURIComponent(safeRankCmd)}`,
+        `botcommand=${encodeURIComponent(safeRoleCmd)}`,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      await interaction.editReply(`✅ Rank updated: Set "${playerNameFound}" to "${rankNameFound}" in ${groupName}`);
+      await interaction.editReply(`✅ Role updated: Set "${playerNameFound}" to "${roleNameFound}" in ${groupName}`);
 
     } catch (err) {
-      console.error('[grank] Error:', err);
-      await interaction.editReply('❌ Failed to set group rank. Check logs for details.');
+      console.error('[grole] Error:', err);
+      await interaction.editReply('❌ Failed to set group role. Check logs for details.');
     }
   }
 };
