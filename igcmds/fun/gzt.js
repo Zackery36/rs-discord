@@ -2,73 +2,72 @@ const axios = require('axios');
 const config = require('../../config.json');
 const ZoneManager = require('../../utils/ZoneManager');
 
-async function sendCommand(command) {
+// Track active countdowns
+const activeCountdowns = new Map();
+
+async function sendGroupMessage(message) {
     try {
         await axios.post(
             `http://${config.raksampHost}:${config.raksampPort}/`,
-            `command=${encodeURIComponent(command)}`,
+            `message=${encodeURIComponent(message)}`,
             { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 2000 }
         );
-        return true;
     } catch (e) {
-        console.error(`[GZT] Command failed: ${command} - ${e.message}`);
-        return false;
+        console.error(`[GZT] Failed to send message: ${e.message}`);
     }
 }
 
 module.exports = {
     name: 'gzt',
-    description: 'Check group war timer',
+    description: 'Toggle war countdown notifications',
     execute: async (client, config, args, player, playerId) => {
-        const ownGroup = config.defaultGroup;
-        const opponent = ZoneManager.getGroupWarStatus(ownGroup);
+        const defaultGroup = config.defaultGroup;
+        
+        // Toggle functionality
+        if (args[0] === 'on' || args[0] === 'off') {
+            const enabled = args[0] === 'on';
+            ZoneManager.toggleCountdown(enabled);
+            return `✅ War countdown notifications ${enabled ? 'ENABLED' : 'DISABLED'}`;
+        }
+        
+        // Check if we're in a war
+        const opponent = ZoneManager.getGroupWarStatus(defaultGroup);
         if (!opponent) {
             return '⚔️ Your group is not currently in a war.';
         }
         
-        return new Promise(async (resolve) => {
-            let timerData = null;
-            const timeoutRef = setTimeout(() => {
-                client.off('textdraw', textdrawHandler);
-                resolve('❌ Failed to retrieve war timer');
-            }, 1000);
+        // Start countdown if not already running
+        if (!activeCountdowns.has(defaultGroup)) {
+            const warDuration = 10 * 60; // 10 minutes in seconds
+            let remaining = warDuration;
             
-            // Textdraw handler
-            const textdrawHandler = (data) => {
-                if (data.textdrawId === 59) {
-                    const match = data.text.match(/~r~~h~(\d+)~w~-~b~~h~(\d+)\s*~n~~w~(\d+:\d+)/);
-                    
-                    if (match) {
-                        timerData = {
-                            attacker: match[1],
-                            defender: match[2],
-                            time: match[3]
-                        };
-                        
-                        clearTimeout(timeoutRef);
-                        client.off('textdraw', textdrawHandler);
-                        
-                        // Format response
-                        const response = `⏱️ War Timer: ${timerData.time} | Score: ${timerData.attacker}-${timerData.defender} (against ${opponent})`;
-                        resolve(response);
-                    }
+            // First minute countdown (last 10 seconds)
+            setTimeout(async () => {
+                for (let i = 10; i > 0; i--) {
+                    setTimeout(async () => {
+                        if (i === 10) await sendGroupMessage('⚠️ 10 seconds left in the first minute!');
+                        if (i === 5) await sendGroupMessage('⚠️ 5 seconds left in the first minute!');
+                        if (i === 1) await sendGroupMessage('⚠️ 1 second left in the first minute!');
+                    }, (60 - i) * 1000);
                 }
-            };
-
-            // Set up the handler
-            client.on('textdraw', textdrawHandler);
+            }, 50 * 1000); // Start at 50 seconds
             
-            // Join GZ2 only once
-            const joined = await sendCommand('/gz2');
-            if (!joined) {
-                clearTimeout(timeoutRef);
-                client.off('textdraw', textdrawHandler);
-                resolve('❌ Failed to join GZ2');
-            }
-        }).then(async (response) => {
-            // Always attempt to leave GZ2 after operation
-            await sendCommand('/fr');
-            return response;
-        });
+            // Final minute countdown (last 10 seconds)
+            setTimeout(async () => {
+                for (let i = 10; i > 0; i--) {
+                    setTimeout(async () => {
+                        if (i === 10) await sendGroupMessage('⚠️ 10 seconds left in the war!');
+                        if (i === 5) await sendGroupMessage('⚠️ 5 seconds left in the war!');
+                        if (i === 1) await sendGroupMessage('⚠️ 1 second left in the war!');
+                    }, (9 * 60 * 1000) + (60 - i) * 1000);
+                }
+            }, (9 * 60 + 50) * 1000); // Start at 9:50
+            
+            // Store the countdown reference
+            activeCountdowns.set(defaultGroup, true);
+            return '✅ War countdown started!';
+        }
+        
+        return '❌ Countdown is already running for this war.';
     }
 };

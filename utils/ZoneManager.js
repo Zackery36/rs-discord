@@ -10,10 +10,17 @@ class ZoneManager {
         this.zoneCycles = new Map();
         this.activeWars = new Map();
         this.lockedAttacks = new Map();
+        this.warStartTimes = new Map();
+        this.countdownEnabled = false;
+        this.cooldownDuration = 6 * 60 * 60 * 1000; // 6 hours
+        this.attackWindow = 60 * 60 * 1000; // 1 hour
         this.filePath = path.join(__dirname, '../data/zones.json');
         this.cZonesPath = path.join(__dirname, '../data/czones.json');
-        this.cooldownDuration = 6 * 60 * 60 * 1000;
-        this.attackWindow = 60 * 60 * 1000;
+        this.zonePositions = new Map();
+        this.loadData();
+    }
+
+    loadData() {
         this.loadZones();
         this.loadCZonePositions();
     }
@@ -28,6 +35,8 @@ class ZoneManager {
                 this.groupTags = new Map(data.groupTags || []);
                 this.activeWars = new Map(data.activeWars || []);
                 this.lockedAttacks = new Map(data.lockedAttacks || []);
+                this.warStartTimes = new Map(data.warStartTimes || []);
+                this.countdownEnabled = data.countdownEnabled || false;
                 
                 this.groupZones = new Map();
                 if (data.groupZones) {
@@ -49,11 +58,7 @@ class ZoneManager {
             try {
                 const cZonesData = JSON.parse(fs.readFileSync(this.cZonesPath));
                 for (const [zoneId, zoneData] of cZonesData) {
-                    const existingZone = this.zones.get(zoneId) || {};
-                    this.zones.set(zoneId, {
-                        ...existingZone,
-                        position: zoneData.position
-                    });
+                    this.zonePositions.set(zoneId, zoneData.position);
                 }
                 console.log(`[ZoneManager] Loaded ${cZonesData.length} zone positions`);
             } catch (e) {
@@ -66,14 +71,21 @@ class ZoneManager {
         const groupZonesArray = Array.from(this.groupZones.entries())
             .map(([group, zones]) => [group, Array.from(zones)]);
         
+        const zonesWithoutPositions = Array.from(this.zones.entries()).map(([id, zone]) => {
+            const { position, ...rest } = zone;
+            return [id, rest];
+        });
+
         const data = {
-            zones: Array.from(this.zones.entries()),
+            zones: zonesWithoutPositions,
             cooldowns: Array.from(this.cooldowns.entries()),
             groupTags: Array.from(this.groupTags.entries()),
             groupZones: groupZonesArray,
             zoneCycles: Array.from(this.zoneCycles.entries()),
             activeWars: Array.from(this.activeWars.entries()),
-            lockedAttacks: Array.from(this.lockedAttacks.entries())
+            lockedAttacks: Array.from(this.lockedAttacks.entries()),
+            warStartTimes: Array.from(this.warStartTimes.entries()),
+            countdownEnabled: this.countdownEnabled
         };
         
         fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2));
@@ -81,10 +93,8 @@ class ZoneManager {
 
     saveCZonePositions() {
         const positions = [];
-        for (const [zoneId, zoneData] of this.zones) {
-            if (zoneData.position) {
-                positions.push([zoneId, { position: zoneData.position }]);
-            }
+        for (const [zoneId, position] of this.zonePositions) {
+            positions.push([zoneId, { position }]);
         }
         fs.writeFileSync(this.cZonesPath, JSON.stringify(positions, null, 2));
     }
@@ -101,7 +111,6 @@ class ZoneManager {
         
         this.updateGroupZone(attackerGroup, zoneId, true);
         this.updateGroupZone(defenderGroup, zoneId, false);
-        this.cooldowns.set(zoneId, attackableAt);
         this.saveZones();
         return attackableAt;
     }
@@ -110,8 +119,11 @@ class ZoneManager {
         if (!groupName) return;
         
         let zones = this.groupZones.get(groupName) || new Set();
-        if (isAdding) zones.add(zoneId);
-        else zones.delete(zoneId);
+        if (isAdding) {
+            zones.add(zoneId);
+        } else {
+            zones.delete(zoneId);
+        }
         
         this.groupZones.set(groupName, zones);
         this.saveZones();
@@ -127,26 +139,49 @@ class ZoneManager {
     }
 
     addZonePosition(zoneId, x, y, z) {
-        const zone = this.zones.get(zoneId) || {};
-        zone.position = { x, y, z };
-        this.zones.set(zoneId, zone);
-        this.saveCZonePositions();  // Save to czones.json
+        this.zonePositions.set(zoneId, { x, y, z });
+        this.saveCZonePositions();
         return true;
     }
 
     getZonePosition(zoneId) {
-        const zone = this.zones.get(zoneId);
-        return zone?.position || null;
+        return this.zonePositions.get(zoneId) || null;
     }
 
     setGroupWarStatus(groupName, opponent) {
-        if (opponent) this.activeWars.set(groupName, opponent);
-        else this.activeWars.delete(groupName);
+        if (opponent) {
+            this.activeWars.set(groupName, opponent);
+            this.warStartTimes.set(groupName, Date.now());
+        } else {
+            this.activeWars.delete(groupName);
+            this.warStartTimes.delete(groupName);
+        }
         this.saveZones();
     }
 
     getGroupWarStatus(groupName) {
         return this.activeWars.get(groupName) || null;
+    }
+    
+    getWarStartTime(groupName) {
+        return this.warStartTimes.get(groupName) || null;
+    }
+    
+    getWarTimeLeft(groupName) {
+        const startTime = this.warStartTimes.get(groupName);
+        if (!startTime) return null;
+        
+        const warDuration = 10 * 60 * 1000; // 10 minutes
+        const elapsed = Date.now() - startTime;
+        const remaining = warDuration - elapsed;
+        
+        return remaining > 0 ? Math.floor(remaining / 1000) : 0;
+    }
+    
+    toggleCountdown(enabled) {
+        this.countdownEnabled = enabled;
+        this.saveZones();
+        return enabled;
     }
 
     getGroupNameByTag(tag) {
@@ -193,10 +228,21 @@ class ZoneManager {
     }
 
     isAttackable(zoneId) {
-        const cooldown = this.cooldowns.get(zoneId);
-        if (!cooldown) return true;
+        const zone = this.zones.get(zoneId);
+        if (!zone) return false;
+        
         const now = Date.now();
-        return now > cooldown && now < (cooldown + this.attackWindow);
+        const { capturedAt } = zone;
+        
+        // Calculate how many full cycles have passed since last capture
+        const cycleLength = this.cooldownDuration + this.attackWindow;
+        const cyclesPassed = Math.floor((now - capturedAt) / cycleLength);
+        
+        // Calculate the current attack window start time
+        const currentWindowStart = capturedAt + cyclesPassed * cycleLength + this.cooldownDuration;
+        const currentWindowEnd = currentWindowStart + this.attackWindow;
+        
+        return now >= currentWindowStart && now <= currentWindowEnd;
     }
 
     getAttackableZonesByGroup() {
