@@ -38,7 +38,7 @@ module.exports = {
             // Teleport to zone
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z}`)}`,
+                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z} 1 0`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
@@ -55,12 +55,6 @@ module.exports = {
             // Short delay before notification
             await delay(100);
             
-            // Send notification
-            await axios.post(
-                `http://${config.raksampHost}:${config.raksampPort}/`,
-                `message=${encodeURIComponent(`!Attacking zone #${zoneId} of ${groupName}.`)}`,
-                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-            );
             
             // Set timeout for return
             setTimeout(async () => {
@@ -75,7 +69,7 @@ module.exports = {
                 }
             }, 40000);
             
-            return `✅ Attacking zone #${zoneId} of ${groupName}.`;
+            return `Attacking zone #${zoneId} of ${groupName}.`;
         } catch (e) {
             return `❌ Failed to attack: ${e.message}`;
         }

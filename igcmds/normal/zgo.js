@@ -33,20 +33,14 @@ module.exports = {
             // Teleport to zone
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z}`)}`,
+                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z} 1 0`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
             // Short delay before notification
             await delay(100);
             
-            // Send notification
-            await axios.post(
-                `http://${config.raksampHost}:${config.raksampPort}/`,
-                `message=${encodeURIComponent(`!Going to zone #${zoneId} of ${groupName}. You have 40 seconds.`)}`,
-                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-            );
-            
+        
             // Set timeout for return
             setTimeout(async () => {
                 try {
@@ -60,7 +54,7 @@ module.exports = {
                 }
             }, 40000);
             
-            return `Teleported to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
+            return `Going to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
         } catch (e) {
             return `Failed to teleport: ${e.message}`;
         }
