@@ -4,7 +4,6 @@ const path = require('path');
 class ZoneManager {
     constructor() {
         this.zones = new Map();
-        this.cooldowns = new Map();
         this.groupTags = new Map();
         this.groupZones = new Map();
         this.zoneCycles = new Map();
@@ -31,7 +30,6 @@ class ZoneManager {
                 const data = JSON.parse(fs.readFileSync(this.filePath));
                 
                 this.zones = new Map(data.zones || []);
-                this.cooldowns = new Map(data.cooldowns || []);
                 this.groupTags = new Map(data.groupTags || []);
                 this.activeWars = new Map(data.activeWars || []);
                 this.lockedAttacks = new Map(data.lockedAttacks || []);
@@ -78,7 +76,6 @@ class ZoneManager {
 
         const data = {
             zones: zonesWithoutPositions,
-            cooldowns: Array.from(this.cooldowns.entries()),
             groupTags: Array.from(this.groupTags.entries()),
             groupZones: groupZonesArray,
             zoneCycles: Array.from(this.zoneCycles.entries()),
@@ -103,14 +100,21 @@ class ZoneManager {
         const now = Date.now();
         const attackableAt = now + this.cooldownDuration;
         
+        // Update zone ownership
         this.zones.set(zoneId, {
             owner: attackerGroup,
             capturedAt: now,
             attackableAt
         });
         
+        // Remove zone from defender's groupZones
+        if (defenderGroup) {
+            this.updateGroupZone(defenderGroup, zoneId, false);
+        }
+        
+        // Add zone to attacker's groupZones
         this.updateGroupZone(attackerGroup, zoneId, true);
-        this.updateGroupZone(defenderGroup, zoneId, false);
+        
         this.saveZones();
         return attackableAt;
     }
