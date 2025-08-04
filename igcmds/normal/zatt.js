@@ -2,6 +2,10 @@ const ZoneManager = require('../../utils/ZoneManager');
 const axios = require('axios');
 const config = require('../../config.json');
 
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 module.exports = {
     name: 'zatt',
     description: 'Attack an attackable zone by group tag',
@@ -13,19 +17,16 @@ module.exports = {
         const tag = args[0];
         const groupName = ZoneManager.getGroupNameByTag(tag) || tag;
         
-        // Check if trying to attack own group
         if (groupName === config.defaultGroup) {
             return '❌ You cannot attack your own group!';
         }
         
         const result = ZoneManager.getZoneByGroupTag(tag);
         
-        // Handle error message
         if (typeof result === 'string') {
             return result;
         }
         
-        // Handle valid zone ID
         const zoneId = result;
         const position = ZoneManager.getZonePosition(zoneId);
         
@@ -34,31 +35,34 @@ module.exports = {
         }
         
         try {
-            // Send initial response
-            const initialResponse = `Attacking zone #${zoneId} of ${groupName}.`;
+            // Teleport to zone
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(initialResponse)}`,
+                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z}`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
-            // Teleport to zone
-            const teleportCmd = `/pos ${position.x} ${position.y} ${position.z}`;
-            await axios.post(
-                `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(teleportCmd)}`,
-                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-            );
+            // Short delay before attack
+            await delay(100);
             
             // Start attack
-            const attackCmd = `/gz`;
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(attackCmd)}`,
+                `command=${encodeURIComponent('/gz')}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
-            // Set timeout for /fr command
+            // Short delay before notification
+            await delay(100);
+            
+            // Send notification
+            await axios.post(
+                `http://${config.raksampHost}:${config.raksampPort}/`,
+                `message=${encodeURIComponent(`!Attacking zone #${zoneId} of ${groupName}.`)}`,
+                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+            );
+            
+            // Set timeout for return
             setTimeout(async () => {
                 try {
                     await axios.post(
@@ -66,19 +70,12 @@ module.exports = {
                         `command=${encodeURIComponent('/fr')}`,
                         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
                     );
-                    
-                    // Send return notification
-                    await axios.post(
-                        `http://${config.raksampHost}:${config.raksampPort}/`,
-                        `command=${encodeURIComponent('⏰ Time\'s up! Returning to spawn.')}`,
-                        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-                    );
                 } catch (e) {
-                    console.error(`[zatt] Failed to return to spawn: ${e.message}`);
+                    console.error(`[zatt] Failed to return: ${e.message}`);
                 }
-            }, 40000); // 40 seconds
+            }, 40000);
             
-            return `✅ Attacking zone #${zoneId} of ${groupName}. `;
+            return `✅ Attacking zone #${zoneId} of ${groupName}.`;
         } catch (e) {
             return `❌ Failed to attack: ${e.message}`;
         }

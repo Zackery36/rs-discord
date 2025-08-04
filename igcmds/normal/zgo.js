@@ -2,6 +2,10 @@ const ZoneManager = require('../../utils/ZoneManager');
 const axios = require('axios');
 const config = require('../../config.json');
 
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 module.exports = {
     name: 'zgo',
     description: 'Teleport to an attackable zone by group tag',
@@ -13,12 +17,10 @@ module.exports = {
         const tag = args[0];
         const result = ZoneManager.getZoneByGroupTag(tag);
         
-        // Handle error message
         if (typeof result === 'string') {
             return result;
         }
         
-        // Handle valid zone ID
         const zoneId = result;
         const groupName = ZoneManager.getGroupNameByTag(tag) || tag;
         const position = ZoneManager.getZonePosition(zoneId);
@@ -29,24 +31,23 @@ module.exports = {
         
         try {
             // Teleport to zone
-            const teleportCmd = `/pos ${position.x} ${position.y} ${position.z}`;
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(teleportCmd)}`,
+                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z}`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
-            // Send initial response
-            const initialResponse = `Going to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
+            // Short delay before notification
+            await delay(100);
+            
+            // Send notification
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `message=${encodeURIComponent(`!${initialResponse}`)}`,
+                `message=${encodeURIComponent(`!Going to zone #${zoneId} of ${groupName}. You have 40 seconds.`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
-            
-            
-            // Set timeout for /fr command
+            // Set timeout for return
             setTimeout(async () => {
                 try {
                     await axios.post(
@@ -54,19 +55,12 @@ module.exports = {
                         `command=${encodeURIComponent('/fr')}`,
                         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
                     );
-                    
-                    // Send return notification
-                    await axios.post(
-                        `http://${config.raksampHost}:${config.raksampPort}/`,
-                        `message=${encodeURIComponent('!⏰ Time\'s up! Returning to spawn.')}`,
-                        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-                    );
                 } catch (e) {
-                    console.error(`[zgo] Failed to return to spawn: ${e.message}`);
+                    console.error(`[zgo] Failed to return: ${e.message}`);
                 }
-            }, 40000); // 40 seconds
+            }, 40000);
             
-            return `eleported to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
+            return `Teleported to zone #${zoneId} of ${groupName}. You have 40 seconds.`;
         } catch (e) {
             return `Failed to teleport: ${e.message}`;
         }
