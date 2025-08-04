@@ -9,7 +9,7 @@ async function sendGroupMessage(message) {
     try {
         await axios.post(
             `http://${config.raksampHost}:${config.raksampPort}/`,
-            `message=${encodeURIComponent(message)}`,
+            `message=!${encodeURIComponent(message)}`,
             { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 2000 }
         );
     } catch (e) {

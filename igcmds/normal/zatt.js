@@ -43,7 +43,7 @@ module.exports = {
             );
             
             // Short delay before attack
-            await delay(100);
+            await delay(300);
             
             // Start attack
             await axios.post(

@@ -16,7 +16,7 @@ async function sendCommand(command) {
 async function sendGroupMessage(message) {
     await axios.post(
         `http://${config.raksampHost}:${config.raksampPort}/`,
-        `message=${encodeURIComponent(message)}`,
+        `message=!${encodeURIComponent(message)}`,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 }
@@ -40,7 +40,7 @@ async function executeAttack(player, tag) {
         
         // Teleport to zone
         await sendCommand(`/pos ${position.x} ${position.y} ${position.z}`);
-        await delay(100);
+        await delay(300);
         
         // Start attack
         await sendCommand(`/gz ${zoneId}`);
