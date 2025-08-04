@@ -46,25 +46,24 @@ module.exports = {
                     resolve('❌ Failed to retrieve war timer');
                 }, 10000);
                 
-                // Textdraw handler
+                // Textdraw handler for any matching textdraw
                 const textdrawHandler = (data) => {
-                    if (data.textdrawId === 59) {
-                        const match = data.text.match(/~r~~h~(\d+)~w~-~b~~h~(\d+)\s*~n~~w~(\d+:\d+)/);
+                    // Match any textdraw with the war timer format
+                    const match = data.text.match(/~r~~h~(\d+)~w~-~b~~h~(\d+)\s*~n~~w~(\d+:\d+)/);
+                    
+                    if (match) {
+                        timerData = {
+                            attacker: match[1],
+                            defender: match[2],
+                            time: match[3]
+                        };
                         
-                        if (match) {
-                            timerData = {
-                                attacker: match[1],
-                                defender: match[2],
-                                time: match[3]
-                            };
-                            
-                            clearTimeout(timeoutRef);
-                            client.off('textdraw', textdrawHandler);
-                            
-                            // Format response
-                            const response = `⏱️ War Timer: ${timerData.time} | Score: ${timerData.attacker}-${timerData.defender} (${groupName} vs ${opponent})`;
-                            resolve(response);
-                        }
+                        clearTimeout(timeoutRef);
+                        client.off('textdraw', textdrawHandler);
+                        
+                        // Format response
+                        const response = `⏱️ War Timer: ${timerData.time} | Score: ${timerData.attacker}-${timerData.defender} (${groupName} vs ${opponent})`;
+                        resolve(response);
                     }
                 };
 

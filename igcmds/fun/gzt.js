@@ -2,8 +2,8 @@ const axios = require('axios');
 const config = require('../../config.json');
 const ZoneManager = require('../../utils/ZoneManager');
 
-// Track active countdowns
-const activeCountdowns = new Map();
+// Track active countdowns and toggle state
+const countdownStates = new Map();
 
 async function sendGroupMessage(message) {
     try {
@@ -17,6 +17,48 @@ async function sendGroupMessage(message) {
     }
 }
 
+function startCountdown(groupName, opponent) {
+    if (countdownStates.has(groupName)) {
+        // Clear existing if any
+        const { firstMinuteTimeout, lastMinuteTimeout } = countdownStates.get(groupName);
+        clearTimeout(firstMinuteTimeout);
+        clearTimeout(lastMinuteTimeout);
+    }
+    
+    // First minute countdown (last 10 seconds)
+    const firstMinuteTimeout = setTimeout(async () => {
+        await sendGroupMessage('⚠️ 10 seconds left in the first minute!');
+        
+        setTimeout(async () => {
+            await sendGroupMessage('⚠️ 5 seconds left in the first minute!');
+            
+            setTimeout(async () => {
+                await sendGroupMessage('⚠️ 1 second left in the first minute!');
+            }, 4000);
+        }, 5000);
+    }, 50 * 1000); // Start at 50 seconds
+    
+    // Final minute countdown (last 10 seconds)
+    const lastMinuteTimeout = setTimeout(async () => {
+        await sendGroupMessage('⚠️ 10 seconds left in the war!');
+        
+        setTimeout(async () => {
+            await sendGroupMessage('⚠️ 5 seconds left in the war!');
+            
+            setTimeout(async () => {
+                await sendGroupMessage('⚠️ 1 second left in the war!');
+            }, 4000);
+        }, 5000);
+    }, (9 * 60 + 50) * 1000); // Start at 9:50
+    
+    // Store the timeouts
+    countdownStates.set(groupName, {
+        enabled: true,
+        firstMinuteTimeout,
+        lastMinuteTimeout
+    });
+}
+
 module.exports = {
     name: 'gzt',
     description: 'Toggle war countdown notifications',
@@ -24,50 +66,32 @@ module.exports = {
         const defaultGroup = config.defaultGroup;
         
         // Toggle functionality
-        if (args[0] === 'on' || args[0] === 'off') {
-            const enabled = args[0] === 'on';
-            ZoneManager.toggleCountdown(enabled);
-            return `✅ War countdown notifications ${enabled ? 'ENABLED' : 'DISABLED'}`;
-        }
-        
-        // Check if we're in a war
-        const opponent = ZoneManager.getGroupWarStatus(defaultGroup);
-        if (!opponent) {
-            return '⚔️ Your group is not currently in a war.';
-        }
-        
-        // Start countdown if not already running
-        if (!activeCountdowns.has(defaultGroup)) {
-            const warDuration = 10 * 60; // 10 minutes in seconds
-            let remaining = warDuration;
+        if (args.length === 0) {
+            // Toggle state
+            const currentState = countdownStates.get(defaultGroup)?.enabled || false;
+            const newState = !currentState;
             
-            // First minute countdown (last 10 seconds)
-            setTimeout(async () => {
-                for (let i = 10; i > 0; i--) {
-                    setTimeout(async () => {
-                        if (i === 10) await sendGroupMessage('⚠️ 10 seconds left in the first minute!');
-                        if (i === 5) await sendGroupMessage('⚠️ 5 seconds left in the first minute!');
-                        if (i === 1) await sendGroupMessage('⚠️ 1 second left in the first minute!');
-                    }, (60 - i) * 1000);
+            if (newState) {
+                // Check if we're in a war
+                const opponent = ZoneManager.getGroupWarStatus(defaultGroup);
+                if (!opponent) {
+                    return '⚔️ Group is not in war. Enable when war starts.';
                 }
-            }, 50 * 1000); // Start at 50 seconds
-            
-            // Final minute countdown (last 10 seconds)
-            setTimeout(async () => {
-                for (let i = 10; i > 0; i--) {
-                    setTimeout(async () => {
-                        if (i === 10) await sendGroupMessage('⚠️ 10 seconds left in the war!');
-                        if (i === 5) await sendGroupMessage('⚠️ 5 seconds left in the war!');
-                        if (i === 1) await sendGroupMessage('⚠️ 1 second left in the war!');
-                    }, (9 * 60 * 1000) + (60 - i) * 1000);
+                
+                startCountdown(defaultGroup, opponent);
+                return '✅ War countdown notifications ENABLED!';
+            } else {
+                // Disable
+                if (countdownStates.has(defaultGroup)) {
+                    const { firstMinuteTimeout, lastMinuteTimeout } = countdownStates.get(defaultGroup);
+                    clearTimeout(firstMinuteTimeout);
+                    clearTimeout(lastMinuteTimeout);
+                    countdownStates.delete(defaultGroup);
                 }
-            }, (9 * 60 + 50) * 1000); // Start at 9:50
-            
-            // Store the countdown reference
-            activeCountdowns.set(defaultGroup, true);
-            return '✅ War countdown started!';
+                return '✅ War countdown notifications DISABLED!';
+            }
         }
         
-        return '❌ Countdown is already running for this war.';
+        return '❌ Usage: ,gzt (with no arguments to toggle)';
     }
 };
