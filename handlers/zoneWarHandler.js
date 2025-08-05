@@ -3,8 +3,8 @@ const ZoneManager = require('../utils/ZoneManager');
 
 module.exports = (client, config) => {
     client.on('samp_message', (raw) => {
-        // Detect war outcome with improved regex
-        const warOutcomeRegex = /ZONE WAR: (.+?) (takes over|keeps) zone ['"]#?\s*(\d+)['"]/i;
+        // Detect war outcome
+        const warOutcomeRegex = /ZONE WAR: (.+?) (takes over|keeps) zone '#\s*(\d+)'/i;
         const warOutcomeMatch = raw.match(warOutcomeRegex);
         
         if (warOutcomeMatch) {
@@ -13,7 +13,10 @@ module.exports = (client, config) => {
             const zoneId = parseInt(warOutcomeMatch[3]);
             
             if (action === 'takes over') {
-                const defenderGroup = ZoneManager.getGroupWarStatus(groupName);
+                // Get current owner before updating
+                const currentZone = ZoneManager.zones.get(zoneId);
+                const defenderGroup = currentZone ? currentZone.owner : null;
+                
                 const attackableAt = ZoneManager.recordZoneCapture(zoneId, groupName, defenderGroup);
                 
                 // Notify Discord

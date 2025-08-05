@@ -18,16 +18,17 @@ module.exports = {
                 response += `[${tag} ${zones.length}] `;
             }
             
-            // Split response into chunks of max 120 characters
+            // Split response into chunks of max 100 characters
             const chunks = [];
             let currentChunk = '';
+            const words = response.split(' ');
             
-            for (const part of response.split(' ')) {
-                if ((currentChunk + part).length + 1 > 120) {
+            for (const word of words) {
+                if ((currentChunk + word).length + 1 > 100) {
                     chunks.push(currentChunk.trim());
                     currentChunk = '';
                 }
-                currentChunk += part + ' ';
+                currentChunk += word + ' ';
             }
             
             if (currentChunk.trim()) {
