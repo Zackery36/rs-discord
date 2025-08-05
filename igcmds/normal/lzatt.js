@@ -38,12 +38,19 @@ async function executeAttack(player, tag) {
             return `❌ Zone #${zoneId} position not mapped`;
         }
         
+        // Get time left until attackable
+        const cooldown = ZoneManager.getZoneCooldown(zoneId);
+        if (cooldown > 0) {
+            const minutes = Math.ceil(cooldown / (60 * 1000));
+            return `⌛ Zone #${zoneId} is on cooldown (${minutes} minutes left)`;
+        }
+        
         // Teleport to zone
         await sendCommand(`/pos ${position.x} ${position.y} ${position.z}`);
         await delay(300);
         
         // Start attack
-        await sendCommand(`/gz ${zoneId}`);
+        await sendCommand(`/gz`);
         await delay(100);
         
         // Send notification
@@ -114,36 +121,18 @@ module.exports = {
             warListener: null
         };
         
-        lock.warListener = async ({ group, opponent }) => {
+        // War end listener for immediate attack
+        lock.warListener = async (event) => {
             try {
-                if (lock.groupName === group || lock.groupName === opponent) {
+                if (event.group === lock.groupName || event.opponent === lock.groupName) {
                     const ourWarStatus = ZoneManager.getGroupWarStatus(config.defaultGroup);
                     const theirWarStatus = ZoneManager.getGroupWarStatus(lock.groupName);
                     
                     if (!ourWarStatus && !theirWarStatus) {
-                        const zoneId = ZoneManager.getZoneByGroupTag(lock.tag);
-                        if (typeof zoneId === 'string') return;
-                        
-                        const position = ZoneManager.getZonePosition(zoneId);
-                        if (!position) return;
-                        
-                        // Teleport directly
-                        await sendCommand(`/pos ${position.x} ${position.y} ${position.z}`);
-                        await delay(100);
-                        
-                        // Start attack
-                        await sendCommand(`/gz`);
-                        await delay(100);
-                        
-                        // Notify group
-                        await sendGroupMessage(`⚡ IMMEDIATE ATTACK on ${lock.groupName} zone #${zoneId}`);
-                        
-                        lock.lastAttack = Date.now();
-                        
-                        // Set timeout for return
-                        setTimeout(async () => {
-                            await sendCommand('/fr');
-                        }, 40000);
+                        const result = await executeAttack(lock.player, lock.tag);
+                        if (!result.startsWith('❌') && !result.startsWith('⌛')) {
+                            lock.lastAttack = Date.now();
+                        }
                     }
                 }
             } catch (e) {
@@ -158,8 +147,10 @@ module.exports = {
             const theirWarStatus = ZoneManager.getGroupWarStatus(groupName);
             
             if (!ourWarStatus && !theirWarStatus) {
-                await executeAttack(player, tag);
-                lock.lastAttack = Date.now();
+                const result = await executeAttack(player, tag);
+                if (!result.startsWith('❌') && !result.startsWith('⌛')) {
+                    lock.lastAttack = Date.now();
+                }
             }
         } catch (e) {
             console.error(`[lzatt] Initial attack failed: ${e.message}`);
@@ -174,11 +165,10 @@ module.exports = {
                 
                 if (ourWarStatus || theirWarStatus) return;
                 
-                const result = ZoneManager.getZoneByGroupTag(lock.tag);
-                if (typeof result === 'string') return;
-                
-                await executeAttack(lock.player, lock.tag);
-                lock.lastAttack = Date.now();
+                const result = await executeAttack(lock.player, lock.tag);
+                if (!result.startsWith('❌') && !result.startsWith('⌛')) {
+                    lock.lastAttack = Date.now();
+                }
             } catch (e) {
                 console.error(`[lzatt] Interval attack failed: ${e.message}`);
             }

@@ -83,7 +83,7 @@ module.exports = (client, config) => {
         
         if (tag) {
             ZoneManager.setGroupTag(groupName, tag);
-            console.log(`[GroupTag] Extracted tag for ${groupName}: ${tag}`);
+            console.log(`[GroupTag] Extracted and saved tag for ${groupName}: ${tag}`);
             return tag;
         }
         
@@ -188,21 +188,29 @@ module.exports = (client, config) => {
                 group2: defender 
             });
             
-            // Existing tag extraction logic
+            // Extract tags if missing
             if (!ZoneManager.getGroupTag(attacker)) {
-                getGroupTag(attacker);
+                console.log(`[GroupTag] Missing tag for ${attacker}, queuing extraction`);
+                getGroupTag(attacker).catch(e => 
+                    console.error(`[GroupTag] Failed to extract tag for ${attacker}:`, e)
+                );
             }
             if (!ZoneManager.getGroupTag(defender)) {
-                getGroupTag(defender);
+                console.log(`[GroupTag] Missing tag for ${defender}, queuing extraction`);
+                getGroupTag(defender).catch(e => 
+                    console.error(`[GroupTag] Failed to extract tag for ${defender}:`, e)
+                );
             }
         }
         
-        // Zone war outcome detection
-        const warOutcomeRegex = /ZONE WAR: (.+?) (takes over|keeps) zone '#\s*(\d+)'/i;
+        // Zone war outcome detection - IMPROVED REGEX
+        const warOutcomeRegex = /ZONE WAR: (.+?) (takes over|keeps) zone ['"]#?\s*(\d+)['"]/i;
         const warOutcomeMatch = raw.match(warOutcomeRegex);
         
         if (warOutcomeMatch) {
             const groupName = warOutcomeMatch[1];
+            const action = warOutcomeMatch[2];
+            const zoneId = warOutcomeMatch[3];
             const opponent = ZoneManager.getGroupWarStatus(groupName);
             
             // Clear war status for both groups
@@ -214,7 +222,9 @@ module.exports = (client, config) => {
             // Emit war end event through client
             client.emit('warEnded', { 
                 group: groupName, 
-                opponent: opponent 
+                opponent: opponent,
+                action: action,
+                zoneId: zoneId
             });
         }
     });
@@ -223,7 +233,17 @@ module.exports = (client, config) => {
     client.on('group_login', ({ groupName }) => {
         if (!ZoneManager.getGroupTag(groupName)) {
             console.log(`[GroupTag] Missing tag for ${groupName}, queuing extraction`);
-            getGroupTag(groupName);
+            getGroupTag(groupName).catch(e => 
+                console.error(`[GroupTag] Failed to extract tag for ${groupName}:`, e)
+            );
         }
     });
+    
+    // Periodically reset uncaptured zones
+    setInterval(() => {
+        const resetCount = ZoneManager.resetUncapturedZones();
+        if (resetCount > 0) {
+            console.log(`[ZoneManager] Reset ${resetCount} uncaptured zones`);
+        }
+    }, 60 * 60 * 1000); // Check every hour
 };

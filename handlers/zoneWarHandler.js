@@ -3,8 +3,8 @@ const ZoneManager = require('../utils/ZoneManager');
 
 module.exports = (client, config) => {
     client.on('samp_message', (raw) => {
-        // Detect war outcome
-        const warOutcomeRegex = /ZONE WAR: (.+?) (takes over|keeps) zone '#\s*(\d+)'/i;
+        // Detect war outcome with improved regex
+        const warOutcomeRegex = /ZONE WAR: (.+?) (takes over|keeps) zone ['"]#?\s*(\d+)['"]/i;
         const warOutcomeMatch = raw.match(warOutcomeRegex);
         
         if (warOutcomeMatch) {
@@ -13,7 +13,8 @@ module.exports = (client, config) => {
             const zoneId = parseInt(warOutcomeMatch[3]);
             
             if (action === 'takes over') {
-                const attackableAt = ZoneManager.recordZoneCapture(zoneId, groupName);
+                const defenderGroup = ZoneManager.getGroupWarStatus(groupName);
+                const attackableAt = ZoneManager.recordZoneCapture(zoneId, groupName, defenderGroup);
                 
                 // Notify Discord
                 const channel = client.channels.cache.get(config.zoneChannelId);
@@ -30,5 +31,12 @@ module.exports = (client, config) => {
                 }
             }
         }
+    });
+    
+    // Listen for war start events to trigger countdowns
+    client.on('warStarted', ({ group1, group2 }) => {
+        // This will automatically trigger the countdown setup in ZoneManager
+        // if countdowns are enabled
+        console.log(`[WarCountdown] War started between ${group1} and ${group2}`);
     });
 };
