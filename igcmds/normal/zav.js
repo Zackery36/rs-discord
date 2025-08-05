@@ -1,4 +1,6 @@
 const ZoneManager = require('../../utils/ZoneManager');
+const axios = require('axios');
+const config = require('../../config.json');
 
 module.exports = {
     name: 'zav',
@@ -16,7 +18,33 @@ module.exports = {
                 response += `[${tag} ${zones.length}] `;
             }
             
-            return response;
+            // Split response into chunks of max 120 characters
+            const chunks = [];
+            let currentChunk = '';
+            
+            for (const part of response.split(' ')) {
+                if ((currentChunk + part).length + 1 > 120) {
+                    chunks.push(currentChunk.trim());
+                    currentChunk = '';
+                }
+                currentChunk += part + ' ';
+            }
+            
+            if (currentChunk.trim()) {
+                chunks.push(currentChunk.trim());
+            }
+            
+            // Send chunks to SA-MP server
+            for (const chunk of chunks) {
+                await axios.post(
+                    `http://${config.raksampHost}:${config.raksampPort}/`,
+                    `message=!${encodeURIComponent(chunk)}`,
+                    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+                );
+                await new Promise(resolve => setTimeout(resolve, 300)); // Small delay between messages
+            }
+            
+            return null; // Don't send response to Discord
         } catch (e) {
             console.error('[zav] Command error:', e);
             return 'Error fetching zones';
