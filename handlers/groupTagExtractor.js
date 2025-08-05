@@ -209,8 +209,6 @@ module.exports = (client, config) => {
         
         if (warOutcomeMatch) {
             const groupName = warOutcomeMatch[1];
-            const action = warOutcomeMatch[2];
-            const zoneId = warOutcomeMatch[3];
             const opponent = ZoneManager.getGroupWarStatus(groupName);
             
             // Clear war status for both groups
@@ -222,9 +220,7 @@ module.exports = (client, config) => {
             // Emit war end event through client
             client.emit('warEnded', { 
                 group: groupName, 
-                opponent: opponent,
-                action: action,
-                zoneId: zoneId
+                opponent: opponent 
             });
         }
     });
@@ -238,12 +234,4 @@ module.exports = (client, config) => {
             );
         }
     });
-    
-    // Periodically reset uncaptured zones
-    setInterval(() => {
-        const resetCount = ZoneManager.resetUncapturedZones();
-        if (resetCount > 0) {
-            console.log(`[ZoneManager] Reset ${resetCount} uncaptured zones`);
-        }
-    }, 60 * 60 * 1000); // Check every hour
 };

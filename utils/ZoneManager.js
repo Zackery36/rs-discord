@@ -16,7 +16,6 @@ class ZoneManager {
         this.filePath = path.join(__dirname, '../data/zones.json');
         this.cZonesPath = path.join(__dirname, '../data/czones.json');
         this.zonePositions = new Map();
-        this.warCountdowns = new Map(); // Stores active war countdowns
         this.loadData();
     }
 
@@ -120,40 +119,6 @@ class ZoneManager {
         this.saveZones();
         return attackableAt;
     }
-    
-    // Handle zones that weren't captured during attack window
-    resetUncapturedZones() {
-        const now = Date.now();
-        let resetCount = 0;
-        
-        for (const [zoneId, zone] of this.zones) {
-            const { capturedAt } = zone;
-            const cycleLength = this.cooldownDuration + this.attackWindow;
-            const cyclesPassed = Math.floor((now - capturedAt) / cycleLength);
-            
-            // Calculate the end of the current attack window
-            const windowEnd = capturedAt + cyclesPassed * cycleLength + this.cooldownDuration + this.attackWindow;
-            
-            // If we're past the attack window and zone wasn't captured
-            if (now > windowEnd) {
-                // Treat it as if it was recaptured at the end of the window
-                const newCaptureTime = windowEnd;
-                this.zones.set(zoneId, {
-                    ...zone,
-                    capturedAt: newCaptureTime,
-                    attackableAt: newCaptureTime + this.cooldownDuration
-                });
-                resetCount++;
-            }
-        }
-        
-        if (resetCount > 0) {
-            console.log(`[ZoneManager] Reset ${resetCount} uncaptured zones`);
-            this.saveZones();
-        }
-        
-        return resetCount;
-    }
 
     updateGroupZone(groupName, zoneId, isAdding) {
         if (!groupName) return;
@@ -192,99 +157,12 @@ class ZoneManager {
     setGroupWarStatus(groupName, opponent) {
         if (opponent) {
             this.activeWars.set(groupName, opponent);
-            const startTime = Date.now();
-            this.warStartTimes.set(groupName, startTime);
-            
-            // Setup countdown if enabled
-            if (this.countdownEnabled) {
-                this.setupWarCountdown(groupName, startTime);
-            }
-            
-            console.log(`[WarTracker] War started: ${groupName} vs ${opponent}`);
+            this.warStartTimes.set(groupName, Date.now());
         } else {
             this.activeWars.delete(groupName);
             this.warStartTimes.delete(groupName);
-            
-            // Clear any existing countdown
-            if (this.warCountdowns.has(groupName)) {
-                clearTimeout(this.warCountdowns.get(groupName));
-                this.warCountdowns.delete(groupName);
-            }
         }
         this.saveZones();
-    }
-    
-    setupWarCountdown(groupName, startTime) {
-        const warDuration = 10 * 60 * 1000; // 10 minutes
-        
-        // Clear any existing countdown
-        if (this.warCountdowns.has(groupName)) {
-            clearTimeout(this.warCountdowns.get(groupName));
-        }
-        
-        const sendCountdown = (secondsLeft) => {
-            const channel = this.getWarChannel();
-            if (channel) {
-                channel.send(`⏳ **${groupName} War**: ${secondsLeft} seconds remaining!`);
-            }
-        };
-        
-        // Schedule countdown messages
-        const scheduleMessage = (timeLeft) => {
-            return setTimeout(() => {
-                if (this.activeWars.get(groupName)) {
-                    sendCountdown(timeLeft);
-                    
-                    // Schedule next message if needed
-                    if (timeLeft > 1) {
-                        const nextTime = this.getNextCountdownTime(timeLeft);
-                        if (nextTime > 0) {
-                            this.warCountdowns.set(
-                                groupName, 
-                                scheduleMessage(nextTime)
-                            );
-                        }
-                    }
-                }
-            }, warDuration - (timeLeft * 1000));
-        };
-        
-        // Set initial countdown times
-        this.warCountdowns.set(groupName, scheduleMessage(600)); // Start with 10 minutes
-        
-        // Special times: 10s, 5s, 1s
-        [10, 5, 1].forEach(seconds => {
-            setTimeout(() => {
-                if (this.activeWars.get(groupName)) {
-                    sendCountdown(seconds);
-                }
-            }, warDuration - (seconds * 1000));
-        });
-    }
-    
-    getNextCountdownTime(current) {
-        // Define when to send countdown messages (last 10s of each minute)
-        const thresholds = [50, 55, 59]; // 50s, 55s, 59s left in minute
-        
-        for (const threshold of thresholds) {
-            if (current > threshold && current <= threshold + 10) {
-                return threshold;
-            }
-        }
-        
-        // If we're in the last minute, handle separately
-        if (current <= 60) {
-            return 0; // Already handled by special times
-        }
-        
-        // Find next minute marker
-        const nextMinute = Math.floor(current / 60) * 60;
-        return nextMinute - 10; // 10s before next minute
-    }
-    
-    getWarChannel() {
-        // In a real implementation, you'd get this from config
-        return null; // Placeholder
     }
 
     getGroupWarStatus(groupName) {
@@ -361,40 +239,16 @@ class ZoneManager {
         
         const now = Date.now();
         const { capturedAt } = zone;
-        const cycleLength = this.cooldownDuration + this.attackWindow;
         
-        // Calculate current cycle position
-        const cyclePosition = (now - capturedAt) % cycleLength;
-        
-        // Zone is attackable if in the attack window portion of the cycle
-        return cyclePosition >= this.cooldownDuration && 
-               cyclePosition <= (this.cooldownDuration + this.attackWindow);
-    }
-    
-    getZoneCooldown(zoneId) {
-        const zone = this.zones.get(zoneId);
-        if (!zone) return null;
-
-        const now = Date.now();
-        const { capturedAt } = zone;
+        // Calculate how many full cycles have passed since last capture
         const cycleLength = this.cooldownDuration + this.attackWindow;
         const cyclesPassed = Math.floor((now - capturedAt) / cycleLength);
-
-        // Calculate next attack window start time
-        const nextWindowStart = capturedAt + cyclesPassed * cycleLength + this.cooldownDuration;
         
-        // If we're in the attack window, return 0
-        if (now >= nextWindowStart && now <= nextWindowStart + this.attackWindow) {
-            return 0;
-        }
+        // Calculate the current attack window start time
+        const currentWindowStart = capturedAt + cyclesPassed * cycleLength + this.cooldownDuration;
+        const currentWindowEnd = currentWindowStart + this.attackWindow;
         
-        // If before the window, return time until window opens
-        if (now < nextWindowStart) {
-            return nextWindowStart - now;
-        }
-        
-        // If after the window, return time until next cycle
-        return (nextWindowStart + cycleLength) - now;
+        return now >= currentWindowStart && now <= currentWindowEnd;
     }
 
     getAttackableZonesByGroup() {

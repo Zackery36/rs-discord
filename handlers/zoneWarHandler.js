@@ -32,11 +32,4 @@ module.exports = (client, config) => {
             }
         }
     });
-    
-    // Listen for war start events to trigger countdowns
-    client.on('warStarted', ({ group1, group2 }) => {
-        // This will automatically trigger the countdown setup in ZoneManager
-        // if countdowns are enabled
-        console.log(`[WarCountdown] War started between ${group1} and ${group2}`);
-    });
 };

@@ -4,7 +4,7 @@ const config = require('../../config.json');
 
 const attackLocks = new Map();
 
-// Helper functions with proper endpoint separation
+// Helper functions
 async function sendCommand(command) {
     await axios.post(
         `http://${config.raksampHost}:${config.raksampPort}/`,
@@ -36,13 +36,6 @@ async function executeAttack(player, tag) {
         
         if (!position) {
             return `❌ Zone #${zoneId} position not mapped`;
-        }
-        
-        // Get time left until attackable
-        const cooldown = ZoneManager.getZoneCooldown(zoneId);
-        if (cooldown > 0) {
-            const minutes = Math.ceil(cooldown / (60 * 1000));
-            return `⌛ Zone #${zoneId} is on cooldown (${minutes} minutes left)`;
         }
         
         // Teleport to zone
@@ -124,14 +117,17 @@ module.exports = {
         // War end listener for immediate attack
         lock.warListener = async (event) => {
             try {
+                // Check if war ended for our locked group
                 if (event.group === lock.groupName || event.opponent === lock.groupName) {
                     const ourWarStatus = ZoneManager.getGroupWarStatus(config.defaultGroup);
                     const theirWarStatus = ZoneManager.getGroupWarStatus(lock.groupName);
                     
+                    // Only attack if both groups are free
                     if (!ourWarStatus && !theirWarStatus) {
                         const result = await executeAttack(lock.player, lock.tag);
-                        if (!result.startsWith('❌') && !result.startsWith('⌛')) {
+                        if (!result.startsWith('❌')) {
                             lock.lastAttack = Date.now();
+                            console.log(`[lzatt] Immediate attack after war: ${result}`);
                         }
                     }
                 }
@@ -140,15 +136,17 @@ module.exports = {
             }
         };
         
+        // Listen for war end events
         client.on('warEnded', lock.warListener);
         
         try {
             const ourWarStatus = ZoneManager.getGroupWarStatus(config.defaultGroup);
             const theirWarStatus = ZoneManager.getGroupWarStatus(groupName);
             
+            // Only attack if both groups are free
             if (!ourWarStatus && !theirWarStatus) {
                 const result = await executeAttack(player, tag);
-                if (!result.startsWith('❌') && !result.startsWith('⌛')) {
+                if (!result.startsWith('❌')) {
                     lock.lastAttack = Date.now();
                 }
             }
@@ -156,23 +154,26 @@ module.exports = {
             console.error(`[lzatt] Initial attack failed: ${e.message}`);
         }
         
+        // Set up interval for continuous attacks
         lock.interval = setInterval(async () => {
             try {
+                // Don't attack more than once every 30 seconds
                 if (Date.now() - lock.lastAttack < 30000) return;
                 
                 const ourWarStatus = ZoneManager.getGroupWarStatus(config.defaultGroup);
                 const theirWarStatus = ZoneManager.getGroupWarStatus(lock.groupName);
                 
+                // Only attack if both groups are free
                 if (ourWarStatus || theirWarStatus) return;
                 
                 const result = await executeAttack(lock.player, lock.tag);
-                if (!result.startsWith('❌') && !result.startsWith('⌛')) {
+                if (!result.startsWith('❌')) {
                     lock.lastAttack = Date.now();
                 }
             } catch (e) {
                 console.error(`[lzatt] Interval attack failed: ${e.message}`);
             }
-        }, 15000);
+        }, 15000); // Check every 15 seconds
         
         attackLocks.set(player, lock);
         
