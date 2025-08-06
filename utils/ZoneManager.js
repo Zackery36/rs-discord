@@ -298,6 +298,40 @@ class ZoneManager {
         return now >= currentWindowStart && now <= currentWindowEnd;
     }
 
+    // NEW: Reset attackableAt for zones that passed their attack window
+    resetAttackableTimes() {
+        const now = Date.now();
+        const cycleLength = this.cooldownDuration + this.attackWindow;
+        let updated = false;
+
+        for (const [zoneId, zone] of this.zones) {
+            const { capturedAt, attackableAt } = zone;
+            
+            // Calculate the end of the current attack window
+            const windowEnd = attackableAt + this.attackWindow;
+            
+            // If window has passed and zone wasn't captured
+            if (now > windowEnd) {
+                // Calculate how many full cycles have passed since capture
+                const cyclesPassed = Math.ceil((now - capturedAt) / cycleLength);
+                
+                // Calculate next attackable time (exact cycle timing)
+                const nextAttackableAt = capturedAt + cyclesPassed * cycleLength + this.cooldownDuration;
+                
+                // Update the zone
+                zone.attackableAt = nextAttackableAt;
+                this.zones.set(zoneId, zone);
+                updated = true;
+                
+                console.log(`[ZoneManager] Reset zone ${zoneId} to next cycle: ${new Date(nextAttackableAt)}`);
+            }
+        }
+
+        if (updated) {
+            this.saveZones();
+        }
+    }
+
     getAttackableZonesByGroup() {
         const attackableZones = {};
         for (const [groupName, zones] of this.groupZones) {

@@ -30,7 +30,7 @@ require('./handlers/zoneWarHandler')(client, config);
 require('./handlers/groupTagExtractor')(client, config);
 require('./handlers/groupEventHandler')(client, config);
 require('./handlers/loginHandler')(client);
-require('./handlers/connectionHandler')(client); // New connection handler
+require('./handlers/connectionHandler')(client);
 
 // Cooldown checker
 const ZoneManager = require('./utils/ZoneManager');
@@ -59,6 +59,9 @@ function checkNewlyAttackableZones() {
 
 // Set up interval for cooldown checking
 setInterval(() => {
+  // Reset attackable times for zones that passed their window
+  ZoneManager.resetAttackableTimes();
+  
   const newlyAttackable = checkNewlyAttackableZones();
   
   if (newlyAttackable.length > 0) {
@@ -66,11 +69,11 @@ setInterval(() => {
     if (channel) {
       channel.send(
         `⚠️ Zones now attackable: ${newlyAttackable.join(', ')}\n` +
-        `They will be vulnerable for 1 hour!`
+        `They will be vulnerable for exactly 1 hour!`
       );
     }
   }
-}, 5 * 60 * 1000); // Check every 5 minutes
+}, 60 * 1000); // Check every minute for precision
 
 client.once('ready', () => {
   console.log(`Discord logged in as ${client.user.tag}`);
@@ -79,6 +82,11 @@ client.once('ready', () => {
   for (const [zoneId] of ZoneManager.zones) {
     lastAttackableState.set(zoneId, ZoneManager.isAttackable(zoneId));
   }
+  
+  // Start precise zone reset scheduler
+  setInterval(() => {
+    ZoneManager.resetAttackableTimes();
+  }, 60 * 1000); // Check every minute for exact timing
 });
 
 client.login(config.token);

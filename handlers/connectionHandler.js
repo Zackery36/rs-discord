@@ -24,16 +24,37 @@ module.exports = (client) => {
         const inactiveTime = now - lastMessageTime;
         
         if (inactiveTime > 60 * 1000) { // 1 minute without messages
-            testConnection();
+            testConnection(client);
         }
     }, 10 * 1000); // Check every 10 seconds
 };
 
-async function testConnection() {
+async function testConnection(client) {
     try {
         connectionTestInProgress = true;
         console.log('[Connection] Testing server connection...');
         
+        // Utility to wait for dialog
+        const waitForDialog = (filter, timeout) => {
+            return new Promise(resolve => {
+                const handler = dlg => {
+                    if (filter(dlg)) {
+                        cleanup();
+                        resolve(dlg);
+                    }
+                };
+                const timer = setTimeout(() => {
+                    cleanup();
+                    resolve(null);
+                }, timeout);
+                function cleanup() {
+                    clearTimeout(timer);
+                    client.off('dialog', handler);
+                }
+                client.on('dialog', handler);
+            });
+        };
+
         // Send test command
         await axios.post(
             `http://${config.raksampHost}:${config.raksampPort}/`,
@@ -41,21 +62,26 @@ async function testConnection() {
             { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
         );
         
-        // Set timeout to check if we get dialog
-        setTimeout(async () => {
-            if (!connectionTestInProgress) return;
-            
+        // Wait for Online Groups dialog
+        const dialog = await waitForDialog(
+            d => d.title.toLowerCase().includes('online groups'),
+            5000 // 5 second timeout
+        );
+        
+        if (dialog) {
+            console.log('[Connection] Server responded with groups dialog');
+        } else {
             console.log('[Connection] No response from server. Reconnecting...');
             await reconnectToServer();
-            
-            connectionTestInProgress = false;
-            reconnectScheduled = false;
-            lastMessageTime = Date.now();
-        }, 5000); // Wait 5 seconds for dialog
+        }
+        
     } catch (error) {
         console.error('[Connection] Test failed:', error.message);
+        await reconnectToServer();
+    } finally {
         connectionTestInProgress = false;
         reconnectScheduled = false;
+        lastMessageTime = Date.now();
     }
 }
 
