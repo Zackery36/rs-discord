@@ -40,7 +40,6 @@ async function executeAttack(player, tag) {
         
         // Teleport to zone
         await sendCommand(`/pos ${position.x} ${position.y} ${position.z}`);
-        await delay(10);
         
         // Start attack
         await sendCommand(`/gz`);
