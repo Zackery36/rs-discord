@@ -33,7 +33,7 @@ module.exports = {
             // Teleport to zone
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z} 1 0`)}`,
+                `botcommand=${encodeURIComponent(`teleport|${position.x}|${position.y}|${position.z}`)}`,
                 { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
             );
             
