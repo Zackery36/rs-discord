@@ -42,9 +42,6 @@ module.exports = {
                             { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
                         );
             
-            // Short delay before attack
-            await delay(300);
-            
             // Start attack
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,
