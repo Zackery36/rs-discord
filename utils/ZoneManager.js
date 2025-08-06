@@ -101,17 +101,19 @@ class ZoneManager {
         const now = Date.now();
         const attackableAt = now + this.cooldownDuration;
         
+        // Remove zone from all groups that previously owned it
+        for (const [group, zones] of this.groupZones) {
+            if (zones.has(zoneId)) {
+                zones.delete(zoneId);
+            }
+        }
+        
         // Update zone ownership
         this.zones.set(zoneId, {
             owner: attackerGroup,
             capturedAt: now,
             attackableAt
         });
-        
-        // Remove zone from defender's groupZones
-        if (defenderGroup) {
-            this.updateGroupZone(defenderGroup, zoneId, false);
-        }
         
         // Add zone to attacker's groupZones
         this.updateGroupZone(attackerGroup, zoneId, true);
@@ -135,9 +137,54 @@ class ZoneManager {
     }
 
     setGroupTag(groupName, tag) {
-        this.groupTags.set(groupName, tag);
+        // If tag is empty, set it directly
+        if (!tag) {
+            this.groupTags.set(groupName, tag);
+            this.saveZones();
+            console.log(`[ZoneManager] Set tag for ${groupName}: ${tag}`);
+            return;
+        }
+
+        // Check if tag is already in use
+        const lowerTag = tag.toLowerCase();
+        let isDuplicate = false;
+        let newTag = tag;
+        let suffix = 2;
+
+        for (const [name, existingTag] of this.groupTags) {
+            // Skip current group
+            if (name === groupName) continue;
+            
+            if (existingTag && existingTag.toLowerCase() === lowerTag) {
+                isDuplicate = true;
+                break;
+            }
+        }
+
+        // Append number if duplicate exists
+        if (isDuplicate) {
+            while (true) {
+                newTag = tag + suffix;
+                const newLowerTag = newTag.toLowerCase();
+                let foundDuplicate = false;
+
+                for (const [name, existingTag] of this.groupTags) {
+                    if (name === groupName) continue;
+                    
+                    if (existingTag && existingTag.toLowerCase() === newLowerTag) {
+                        foundDuplicate = true;
+                        break;
+                    }
+                }
+
+                if (!foundDuplicate) break;
+                suffix++;
+            }
+        }
+
+        this.groupTags.set(groupName, newTag);
         this.saveZones();
-        console.log(`[ZoneManager] Set tag for ${groupName}: ${tag}`);
+        console.log(`[ZoneManager] Set tag for ${groupName}: ${newTag}`);
     }
 
     getGroupTag(groupName) {
