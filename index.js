@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const fs = require('fs');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
@@ -30,7 +29,8 @@ require('./handlers/groupChatHandler')(client, config);
 require('./handlers/zoneWarHandler')(client, config);
 require('./handlers/groupTagExtractor')(client, config);
 require('./handlers/groupEventHandler')(client, config);
-require('./handlers/loginHandler')(client); // Add login handler here
+require('./handlers/loginHandler')(client);
+require('./handlers/connectionHandler')(client); // New connection handler
 
 // Cooldown checker
 const ZoneManager = require('./utils/ZoneManager');
