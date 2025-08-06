@@ -32,6 +32,22 @@ require('./handlers/groupEventHandler')(client, config);
 require('./handlers/loginHandler')(client);
 require('./handlers/connectionHandler')(client);
 
+// Load commands
+const commandFiles = fs.readdirSync('./handlers/commands').filter(file => 
+  file.endsWith('.js') && file !== 'template.js'
+);
+
+for (const file of commandFiles) {
+  const command = require(`./handlers/commands/${file}`);
+  client.commands.set(command.name, command);
+}
+
+// Initialize gzt war listeners if command exists
+const gztCommand = client.commands.get('gzt');
+if (gztCommand && gztCommand.initWarListeners) {
+  gztCommand.initWarListeners(client, config);
+}
+
 // Cooldown checker
 const ZoneManager = require('./utils/ZoneManager');
 let lastAttackableState = new Map(); // Track previous attackable state

@@ -93,27 +93,27 @@ module.exports = {
         }
         
         return 'Usage: ,gzt [status|enable|disable] or just ,gzt to toggle';
-    }
-};
-
-// War event listeners
-module.exports.warListeners = (client) => {
-    // Start countdown when war begins
-    client.on('warStarted', ({ group1, group2 }) => {
-        if (!ZoneManager.countdownEnabled) return;
-        
-        // Check if our group is involved
-        if (group1 === config.defaultGroup) {
-            startWarCountdown(config.defaultGroup, group2);
-        } else if (group2 === config.defaultGroup) {
-            startWarCountdown(config.defaultGroup, group1);
-        }
-    });
+    },
     
-    // Stop countdown when war ends
-    client.on('warEnded', ({ group }) => {
-        if (group === config.defaultGroup) {
-            stopWarCountdown(config.defaultGroup);
-        }
-    });
+    // War event listeners
+    initWarListeners: (client, config) => {
+        // Start countdown when war begins
+        client.on('warStarted', ({ group1, group2 }) => {
+            if (!ZoneManager.countdownEnabled) return;
+            
+            // Check if our group is involved
+            if (group1 === config.defaultGroup) {
+                startWarCountdown(config.defaultGroup, group2);
+            } else if (group2 === config.defaultGroup) {
+                startWarCountdown(config.defaultGroup, group1);
+            }
+        });
+        
+        // Stop countdown when war ends
+        client.on('warEnded', ({ group }) => {
+            if (group === config.defaultGroup) {
+                stopWarCountdown(config.defaultGroup);
+            }
+        });
+    }
 };
