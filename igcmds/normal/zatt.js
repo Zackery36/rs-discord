@@ -37,10 +37,10 @@ module.exports = {
         try {
             // Teleport to zone
             await axios.post(
-                `http://${config.raksampHost}:${config.raksampPort}/`,
-                `command=${encodeURIComponent(`/pos ${position.x} ${position.y} ${position.z} 1 0`)}`,
-                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-            );
+                            `http://${config.raksampHost}:${config.raksampPort}/`,
+                            `botcommand=${encodeURIComponent(`teleport|${position.x}|${position.y}|${position.z}`)}`,
+                            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+                        );
             
             // Short delay before attack
             await delay(300);

@@ -39,7 +39,11 @@ async function executeAttack(player, tag) {
         }
         
         // Teleport to zone
-        await sendCommand(`/pos ${position.x} ${position.y} ${position.z}`);
+        await axios.post(
+                        `http://${config.raksampHost}:${config.raksampPort}/`,
+                        `botcommand=${encodeURIComponent(`teleport|${position.x}|${position.y}|${position.z}`)}`,
+                        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+                    );
         
         // Start attack
         await sendCommand(`/gz`);
