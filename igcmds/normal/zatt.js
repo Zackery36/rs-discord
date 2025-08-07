@@ -41,7 +41,7 @@ module.exports = {
                             `botcommand=${encodeURIComponent(`teleport|${position.x}|${position.y}|${position.z}`)}`,
                             { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
                         );
-            await delay(50);
+            await delay(150);
             // Start attack
             await axios.post(
                 `http://${config.raksampHost}:${config.raksampPort}/`,

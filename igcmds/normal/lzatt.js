@@ -44,7 +44,7 @@ async function executeAttack(player, tag) {
                         `botcommand=${encodeURIComponent(`teleport|${position.x}|${position.y}|${position.z}`)}`,
                         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
                     );
-        await delay(50);
+        await delay(150);
         // Start attack
         await sendCommand(`/gz`);
         await delay(100);
