@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const config = require('./config.json');
+const ZoneScanner = require('./handlers/zoneScanner');
 
 // Ensure logs directory exists
 if (!fs.existsSync('./logs')) fs.mkdirSync('./logs');
@@ -88,5 +89,8 @@ client.once('ready', () => {
     ZoneManager.resetAttackableTimes();
   }, 60 * 1000); // Check every minute for exact timing
 });
+
+// Start zone scanner
+  zoneScanner.start();
 
 client.login(config.token);
