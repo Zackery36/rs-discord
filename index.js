@@ -59,9 +59,6 @@ function checkNewlyAttackableZones() {
 
 // Set up interval for cooldown checking
 setInterval(() => {
-  // Reset attackable times for zones that passed their window
-  ZoneManager.resetAttackableTimes();
-  
   const newlyAttackable = checkNewlyAttackableZones();
   
   if (newlyAttackable.length > 0) {
@@ -82,12 +79,6 @@ client.once('ready', () => {
   for (const [zoneId] of ZoneManager.zones) {
     lastAttackableState.set(zoneId, ZoneManager.isAttackable(zoneId));
   }
-  
-  // Start precise zone reset scheduler
-  setInterval(() => {
-    ZoneManager.resetAttackableTimes();
-  }, 60 * 1000); // Check every minute for exact timing
 });
-
 
 client.login(config.token);
