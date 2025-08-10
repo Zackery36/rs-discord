@@ -8,11 +8,11 @@ if (!fs.existsSync('./logs')) fs.mkdirSync('./logs');
 
 // ---- Discord client ----
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
 // Collections
@@ -23,62 +23,67 @@ client.dialogState = new Map();
 require('./features/discord')(client, config);
 require('./features/express')(client, config);
 
-// Load handlers
+// Load handlers for main bot
 require('./handlers/pmHandler')(client, config);
 require('./handlers/groupChatHandler')(client, config);
 require('./handlers/zoneWarHandler')(client, config);
 require('./handlers/groupTagExtractor')(client, config);
 require('./handlers/groupEventHandler')(client, config);
-require('./handlers/loginHandler')(client);
+require('./handlers/loginHandler')(client); // Main bot login handler
 require('./handlers/connectionHandler')(client);
+
+// Load handlers for scanner bot
+require('./handlers/scannerLoginHandler')(client); // Scanner bot login handler
+require('./handlers/zoneScanner')(client); // Zone scanner
 
 // Cooldown checker
 const ZoneManager = require('./utils/ZoneManager');
-let lastAttackableState = new Map(); // Track previous attackable state
+let lastAttackableState = new Map();
 
-// Function to check for newly attackable zones
 function checkNewlyAttackableZones() {
-  const now = Date.now();
-  const attackableZones = [];
-  
-  // Check all zones for attackable status
-  for (const [zoneId] of ZoneManager.zones) {
-    const isAttackableNow = ZoneManager.isAttackable(zoneId);
-    const wasAttackableBefore = lastAttackableState.get(zoneId) || false;
+    const now = Date.now();
+    const attackableZones = [];
     
-    if (isAttackableNow && !wasAttackableBefore) {
-      attackableZones.push(zoneId);
+    for (const [zoneId] of ZoneManager.zones) {
+        const isAttackableNow = ZoneManager.isAttackable(zoneId);
+        const wasAttackableBefore = lastAttackableState.get(zoneId) || false;
+        
+        if (isAttackableNow && !wasAttackableBefore) {
+            attackableZones.push(zoneId);
+        }
+        
+        lastAttackableState.set(zoneId, isAttackableNow);
     }
     
-    // Update last known state
-    lastAttackableState.set(zoneId, isAttackableNow);
-  }
-  
-  return attackableZones;
+    return attackableZones;
 }
 
-// Set up interval for cooldown checking
-setInterval(() => {
-  const newlyAttackable = checkNewlyAttackableZones();
-  
-  if (newlyAttackable.length > 0) {
-    const channel = client.channels.cache.get(config.zoneChannelId);
-    if (channel) {
-      channel.send(
-        `⚠️ Zones now attackable: ${newlyAttackable.join(', ')}\n` +
-        `They will be vulnerable for exactly 1 hour!`
-      );
-    }
-  }
-}, 60 * 1000); // Check every minute for precision
-
 client.once('ready', () => {
-  console.log(`Discord logged in as ${client.user.tag}`);
-  
-  // Initialize last attackable state
-  for (const [zoneId] of ZoneManager.zones) {
-    lastAttackableState.set(zoneId, ZoneManager.isAttackable(zoneId));
-  }
+    console.log(`Discord logged in as ${client.user.tag}`);
+    
+    // Initialize last attackable state
+    for (const [zoneId] of ZoneManager.zones) {
+        lastAttackableState.set(zoneId, ZoneManager.isAttackable(zoneId));
+    }
+    
+    // Start zone scanner
+    const zoneScanner = require('./handlers/zoneScanner')(client);
+    zoneScanner.start();
+    
+    // Set up interval checks
+    setInterval(() => {
+        const newlyAttackable = checkNewlyAttackableZones();
+        
+        if (newlyAttackable.length > 0) {
+            const channel = client.channels.cache.get(config.zoneChannelId);
+            if (channel) {
+                channel.send(
+                    `⚠️ Zones now attackable: ${newlyAttackable.join(', ')}\n` +
+                    `They will be vulnerable for exactly 1 hour!`
+                );
+            }
+        }
+    }, 60 * 1000); // Check every minute
 });
 
 client.login(config.token);
