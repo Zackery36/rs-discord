@@ -2,7 +2,8 @@ const express = require('express');
 const fs = require('fs');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const config = require('./config.json');
-const ZoneScanner = require('./handlers/zoneScanner'); // Import the class
+const ZoneScanner = require('./handlers/zoneScanner');
+const ZoneManager = require('./utils/ZoneManager');
 
 // Ensure logs directory exists
 if (!fs.existsSync('./logs')) fs.mkdirSync('./logs');
@@ -36,54 +37,17 @@ require('./handlers/connectionHandler')(client);
 // Load handlers for scanner bot
 require('./handlers/scannerLoginHandler')(client); // Scanner bot login handler
 
-// Cooldown checker
-const ZoneManager = require('./utils/ZoneManager');
-let lastAttackableState = new Map();
-
-function checkNewlyAttackableZones() {
-    const now = Date.now();
-    const attackableZones = [];
-    
-    for (const [zoneId] of ZoneManager.zones) {
-        const isAttackableNow = ZoneManager.isAttackable(zoneId);
-        const wasAttackableBefore = lastAttackableState.get(zoneId) || false;
-        
-        if (isAttackableNow && !wasAttackableBefore) {
-            attackableZones.push(zoneId);
-        }
-        
-        lastAttackableState.set(zoneId, isAttackableNow);
-    }
-    
-    return attackableZones;
-}
-
 client.once('ready', () => {
     console.log(`Discord logged in as ${client.user.tag}`);
     
-    // Initialize last attackable state
-    for (const [zoneId] of ZoneManager.zones) {
-        lastAttackableState.set(zoneId, ZoneManager.isAttackable(zoneId));
-    }
-    
-    // CORRECTED: Instantiate ZoneScanner with 'new'
+    // Initialize scanner
     const zoneScanner = new ZoneScanner(client);
     zoneScanner.start();
     
-    // Set up interval checks
+    // Start attackable zone refresh
     setInterval(() => {
-        const newlyAttackable = checkNewlyAttackableZones();
-        
-        if (newlyAttackable.length > 0) {
-            const channel = client.channels.cache.get(config.zoneChannelId);
-            if (channel) {
-                channel.send(
-                    `⚠️ Zones now attackable: ${newlyAttackable.join(', ')}\n` +
-                    `They will be vulnerable for exactly 1 hour!`
-                );
-            }
-        }
-    }, 60 * 1000); // Check every minute
+        ZoneManager.refreshAttackableStatus();
+    }, 10000); // Every 10 seconds
 });
 
 client.login(config.token);

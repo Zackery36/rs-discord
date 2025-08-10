@@ -39,7 +39,6 @@ class ZoneScanner {
     }
 
     buildZoneQueue() {
-        const now = Date.now();
         const zones = [];
         
         for (const [zoneId, zoneData] of ZoneManager.zones) {
@@ -187,10 +186,8 @@ class ZoneScanner {
 
         // Extract time information
         let timeLeftMinutes = null;
-        let isAttackableNow = false;
         
         const timeLine = lines.find(line => line.includes('attacked in'));
-        const attackableLine = lines.find(line => line.toLowerCase().includes('can be attacked now'));
         
         if (timeLine) {
             const hoursMatch = timeLine.match(/(\d+)\s+hours?/);
@@ -198,14 +195,11 @@ class ZoneScanner {
             const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
             const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
             timeLeftMinutes = hours * 60 + minutes;
-        } else if (attackableLine) {
-            isAttackableNow = true;
-            timeLeftMinutes = 0;
         }
         
         // Handle "no members online" case
         if (!newOwner) {
-            if (timeLine || attackableLine) {
+            if (timeLine) {
                 console.log(`[ZoneScanner] Owner offline for zone ${expectedZoneId}, processing time info`);
             } else {
                 console.log(`[ZoneScanner] No owner and no time info for zone ${expectedZoneId}. Skipping.`);
@@ -217,15 +211,15 @@ class ZoneScanner {
         // Check if group tag is missing
         if (newOwner && !ZoneManager.getGroupTag(newOwner)) {
             console.log(`[ZoneScanner] Missing tag for ${newOwner}, fetching...`);
-            await this.fetchGroupTag(dialog.dialogId, newOwner, expectedZoneId, timeLeftMinutes, isAttackableNow);
+            await this.fetchGroupTag(dialog.dialogId, newOwner, expectedZoneId, timeLeftMinutes);
         } else {
-            this.updateZoneData(expectedZoneId, newOwner, timeLeftMinutes, isAttackableNow);
+            this.updateZoneData(expectedZoneId, newOwner, timeLeftMinutes);
             this.currentZoneIndex++;
         }
     }
 
-    updateZoneData(zoneId, newOwner, timeLeftMinutes, isAttackableNow) {
-        const now = Date.now();
+    updateZoneData(zoneId, newOwner, timeLeftMinutes) {
+        const now = ZoneManager.getCurrentTime();
         const currentZone = ZoneManager.zones.get(zoneId);
         if (!currentZone) {
             console.log(`[ZoneScanner] Zone ${zoneId} not found in manager. Skipping.`);
@@ -272,49 +266,35 @@ class ZoneScanner {
         }
 
         // Handle time adjustment logic
-        if (timeLeftMinutes !== null || isAttackableNow) {
-            console.log(`[ZoneScanner] Dialog time left: ${timeLeftMinutes} minutes, Attackable now: ${isAttackableNow}`);
+        if (timeLeftMinutes !== null) {
+            console.log(`[ZoneScanner] Dialog time left: ${timeLeftMinutes} minutes`);
             
-            if (isAttackableNow) {
-                // Zone is attackable but our system doesn't think so
-                if (expectedTimeLeftMinutes > 0) {
-                    console.log(`[ZoneScanner] Zone ${zoneId} is attackable but system shows ${expectedTimeLeftMinutes} minutes left. Adjusting.`);
+            // SPECIAL CASE: Time left < 1 hour and zone captured 8-11 hours ago
+            if (timeLeftMinutes < 60) {
+                const timeSinceCaptureMinutes = (now - currentCapturedAt) / (60 * 1000);
+                
+                // Check if zone was captured 8-11 hours ago (480-660 minutes)
+                if (timeSinceCaptureMinutes > 480 && timeSinceCaptureMinutes < 660) {
+                    console.log(`[ZoneScanner] Special case: <1 hour left & captured 8-11 hours ago`);
                     
-                    // Set capture time to beginning of attack window
-                    currentZone.capturedAt = now - this.cooldownDuration;
-                    console.log(`[ZoneScanner] Updated capture time to: ${new Date(currentZone.capturedAt).toISOString()}`);
-                    needsUpdate = true;
-                }
-            } 
-            else if (timeLeftMinutes !== null) {
-                // SPECIAL CASE: Time left < 1 hour and zone captured 8-11 hours ago
-                if (timeLeftMinutes < 60) {
-                    const timeSinceCaptureMinutes = (now - currentCapturedAt) / (60 * 1000);
-                    
-                    // Check if zone was captured 8-11 hours ago
-                    if (timeSinceCaptureMinutes > 480 && timeSinceCaptureMinutes < 660) {
-                        console.log(`[ZoneScanner] Special case: <1 hour left & captured 8-11 hours ago`);
+                    // Check if zone should be attackable in our system
+                    if (!ZoneManager.isAttackable(zoneId)) {
+                        console.log(`[ZoneScanner] Zone ${zoneId} should be attackable but isn't. Adjusting.`);
                         
-                        // Check if zone should be attackable in our system
-                        if (!ZoneManager.isAttackable(zoneId)) {
-                            console.log(`[ZoneScanner] Zone ${zoneId} should be attackable but isn't. Adjusting.`);
-                            
-                            // Calculate new capture time: now - (7 hours + (60 - timeLeftMinutes))
-                            const timeToDeduct = (this.cycleMinutes + (60 - timeLeftMinutes)) * 60 * 1000;
-                            currentZone.capturedAt = now - timeToDeduct;
-                            console.log(`[ZoneScanner] Updated capture time to: ${new Date(currentZone.capturedAt).toISOString()}`);
-                            needsUpdate = true;
-                        }
-                    }
-                    else {
-                        // Not in special range, do normal discrepancy check
-                        this.checkTimeDiscrepancy(now, currentZone, timeLeftMinutes, expectedTimeLeftMinutes);
+                        // Calculate new capture time: now - (7 hours + (60 - timeLeftMinutes))
+                        const timeToDeduct = (this.cycleMinutes + (60 - timeLeftMinutes)) * 60 * 1000;
+                        currentZone.capturedAt = now - timeToDeduct;
+                        console.log(`[ZoneScanner] Updated capture time to: ${new Date(currentZone.capturedAt).toISOString()}`);
+                        needsUpdate = true;
                     }
                 }
                 else {
-                    // Normal case: timeLeftMinutes >= 60
-                    this.checkTimeDiscrepancy(now, currentZone, timeLeftMinutes, expectedTimeLeftMinutes);
+                    console.log(`[ZoneScanner] Skipping zone - <1 hour left but not in 8-11 hour range`);
                 }
+            }
+            else {
+                // Normal case: timeLeftMinutes >= 60
+                this.checkTimeDiscrepancy(now, currentZone, timeLeftMinutes, expectedTimeLeftMinutes);
             }
         }
 
@@ -345,7 +325,7 @@ class ZoneScanner {
         return false;
     }
     
-    async fetchGroupTag(dialogId, groupName, zoneId, timeLeftMinutes, isAttackableNow) {
+    async fetchGroupTag(dialogId, groupName, zoneId, timeLeftMinutes) {
         this.isProcessingTag = true;
         console.log(`[ZoneScanner] Starting tag fetch for ${groupName}`);
         
@@ -383,12 +363,12 @@ class ZoneScanner {
             
             if (tag) {
                 ZoneManager.setGroupTag(groupName, tag);
-                console.log(`[ZoneScanner] Saved tag for ${groupName}`);
+                console.log(`[ZoneManager] Saved tag for ${groupName}`);
             }
             
             // Update zone data after tag extraction
             console.log(`[ZoneScanner] Updating zone data after tag fetch`);
-            this.updateZoneData(zoneId, groupName, timeLeftMinutes, isAttackableNow);
+            this.updateZoneData(zoneId, groupName, timeLeftMinutes);
             
         } catch (error) {
             console.error(`[ZoneScanner] Error fetching tag for ${groupName}:`, error);
