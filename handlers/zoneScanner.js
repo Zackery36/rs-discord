@@ -17,6 +17,10 @@ class ZoneScanner {
         this.cycleDuration = ZoneManager.cycleDuration;
         this.currentZoneId = null;
         this.isProcessingTag = false;
+        
+        // Convert durations to minutes
+        this.cooldownMinutes = this.cooldownDuration / (60 * 1000); // 360 minutes (6 hours)
+        this.cycleMinutes = this.cycleDuration / (60 * 1000);       // 420 minutes (7 hours)
     }
 
     start() {
@@ -53,7 +57,10 @@ class ZoneScanner {
     }
 
     async scanNextZone() {
-        if (!this.isScanning || this.isProcessingTag) return;
+        if (!this.isScanning || this.isProcessingTag) {
+            console.log(`[ZoneScanner] Scan paused (scanning: ${this.isScanning}, processing tag: ${this.isProcessingTag})`);
+            return;
+        }
 
         if (this.currentZoneIndex >= this.zoneQueue.length) {
             console.log('[ZoneScanner] Completed queue. Rebuilding...');
@@ -79,6 +86,7 @@ class ZoneScanner {
             }
 
             // Teleport to zone
+            console.log(`[ZoneScanner] Teleporting to zone ${zoneId} at (${position.x}, ${position.y}, ${position.z})`);
             await axios.post(
                 `http://${config.raksampHost}:${config.scannerPort}/`,
                 `botcommand=${encodeURIComponent(`teleport|${position.x}|${position.y}|${position.z}`)}`,
@@ -86,9 +94,11 @@ class ZoneScanner {
             );
 
             // Wait for teleport
+            console.log(`[ZoneScanner] Waiting for teleport to complete...`);
             await new Promise(resolve => setTimeout(resolve, 5000));
 
             // Send /gzinfo command
+            console.log(`[ZoneScanner] Sending /gzinfo command`);
             await axios.post(
                 `http://${config.raksampHost}:${config.scannerPort}/`,
                 `command=${encodeURIComponent('/gzinfo')}`,
@@ -118,7 +128,10 @@ class ZoneScanner {
 
         this.dialogHandler = (dialog) => {
             const title = this.cleanDialogText(dialog.title);
-            if (!title.toLowerCase().includes('group zone info')) return;
+            if (!title.toLowerCase().includes('group zone info')) {
+                console.log(`[ZoneScanner] Ignoring dialog: ${title}`);
+                return;
+            }
 
             console.log(`[ZoneScanner] Received dialog for zone ${zoneId}`);
             clearTimeout(this.timeout);
@@ -139,6 +152,8 @@ class ZoneScanner {
         const cleanInfo = this.cleanDialogText(dialog.info);
         const lines = cleanInfo.split('\n').filter(line => line.trim() !== '');
         
+        console.log(`[ZoneScanner] Dialog content for zone ${expectedZoneId}:\n${cleanInfo}`);
+        
         // Verify zone ID from dialog
         let dialogZoneId = null;
         const zoneLine = lines.find(line => line.toLowerCase().includes('zone name:'));
@@ -148,7 +163,7 @@ class ZoneScanner {
         }
         
         if (dialogZoneId === null || dialogZoneId !== expectedZoneId) {
-            console.log(`[ZoneScanner] Zone ID mismatch! Expected ${expectedZoneId}, got ${dialogZoneId}. Skipping.`);
+            console.log(`[ZoneScanner] Zone ID mismatch! Expected ${expectedZoneId}, got ${dialogZoneId || 'unknown'}. Skipping.`);
             this.currentZoneIndex++;
             return;
         }
@@ -162,37 +177,41 @@ class ZoneScanner {
         }
 
         // Extract time until attackable
-        let timeLeft = null;
+        let timeLeftMinutes = null;
         const timeLine = lines.find(line => line.includes('attacked in'));
         if (timeLine) {
             const hoursMatch = timeLine.match(/(\d+)\s+hours?/);
             const minutesMatch = timeLine.match(/(\d+)\s+minutes?/);
             const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
             const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
-            timeLeft = hours * 60 + minutes; // Total minutes
+            timeLeftMinutes = hours * 60 + minutes; // Total minutes
             
             // Skip if less than 1 hour remaining
-            if (timeLeft < 60) {
+            if (timeLeftMinutes < 60) {
                 console.log(`[ZoneScanner] Skipping zone ${expectedZoneId} (less than 1 hour remaining)`);
                 this.currentZoneIndex++;
                 return;
             }
         }
         
-        // Handle "no members online" case
-        if (!newOwner && timeLine) {
-            console.log(`[ZoneScanner] Owner offline for zone ${expectedZoneId}, updating time only`);
-            this.updateZoneTime(expectedZoneId, timeLeft);
-            this.currentZoneIndex++;
-            return;
+        // Handle "no members online" case - same as normal processing
+        if (!newOwner) {
+            if (timeLine) {
+                console.log(`[ZoneScanner] Owner offline for zone ${expectedZoneId}, but we'll still process time`);
+                // Continue with time processing
+            } else {
+                console.log(`[ZoneScanner] No owner and no time info for zone ${expectedZoneId}. Skipping.`);
+                this.currentZoneIndex++;
+                return;
+            }
         }
 
         // Check if group tag is missing
         if (newOwner && !ZoneManager.getGroupTag(newOwner)) {
             console.log(`[ZoneScanner] Missing tag for ${newOwner}, fetching...`);
-            await this.fetchGroupTag(dialog.dialogId, newOwner, expectedZoneId, timeLeft);
+            await this.fetchGroupTag(dialog.dialogId, newOwner, expectedZoneId, timeLeftMinutes);
         } else {
-            this.updateZoneData(expectedZoneId, newOwner, timeLeft);
+            this.updateZoneData(expectedZoneId, newOwner, timeLeftMinutes);
             this.currentZoneIndex++;
         }
     }
@@ -200,7 +219,10 @@ class ZoneScanner {
     updateZoneData(zoneId, newOwner, timeLeftMinutes) {
         const now = Date.now();
         const currentZone = ZoneManager.zones.get(zoneId);
-        if (!currentZone) return;
+        if (!currentZone) {
+            console.log(`[ZoneScanner] Zone ${zoneId} not found in manager. Skipping.`);
+            return;
+        }
 
         const currentOwner = currentZone.owner;
         const currentCapturedAt = currentZone.capturedAt;
@@ -217,29 +239,45 @@ class ZoneScanner {
             ZoneManager.updateGroupZone(newOwner, zoneId, true);
         }
 
-        // Calculate expected time left based on current capture time
-        let expectedTimeLeft = null;
+        // Calculate expected time left based on current capture time (in minutes)
+        let expectedTimeLeftMinutes = null;
         if (currentCapturedAt) {
-            const timeSinceCapture = now - currentCapturedAt;
-            const positionInCycle = timeSinceCapture % this.cycleDuration;
+            const timeSinceCaptureMs = now - currentCapturedAt;
+            const timeSinceCaptureMinutes = timeSinceCaptureMs / (60 * 1000);
             
-            if (positionInCycle < this.cooldownDuration) {
-                expectedTimeLeft = Math.ceil((this.cooldownDuration - positionInCycle) / 60000);
+            // Calculate position in cycle (0-420 minutes)
+            const positionInCycleMinutes = timeSinceCaptureMinutes % this.cycleMinutes;
+            
+            // Calculate expected time left
+            if (positionInCycleMinutes < this.cooldownMinutes) {
+                expectedTimeLeftMinutes = this.cooldownMinutes - positionInCycleMinutes;
             } else {
-                expectedTimeLeft = 0;
+                expectedTimeLeftMinutes = 0; // Attackable now
             }
+            
+            console.log(`[ZoneScanner] Time calculation for zone ${zoneId}:`);
+            console.log(`  - Current time: ${new Date(now).toISOString()}`);
+            console.log(`  - Captured at: ${new Date(currentCapturedAt).toISOString()}`);
+            console.log(`  - Time since capture: ${timeSinceCaptureMinutes.toFixed(2)} minutes`);
+            console.log(`  - Position in cycle: ${positionInCycleMinutes.toFixed(2)} minutes`);
+            console.log(`  - Expected time left: ${expectedTimeLeftMinutes.toFixed(2)} minutes`);
         }
 
         // Handle time discrepancy (more than 2 minutes difference)
-        if (timeLeftMinutes !== null && expectedTimeLeft !== null) {
-            const timeDiff = Math.abs(timeLeftMinutes - expectedTimeLeft);
+        if (timeLeftMinutes !== null && expectedTimeLeftMinutes !== null) {
+            console.log(`[ZoneScanner] Dialog time left: ${timeLeftMinutes} minutes`);
+            
+            const timeDiff = Math.abs(timeLeftMinutes - expectedTimeLeftMinutes);
+            console.log(`[ZoneScanner] Time difference: ${timeDiff.toFixed(2)} minutes`);
             
             if (timeDiff > 2) {
-                console.log(`[ZoneScanner] Time discrepancy for zone ${zoneId}: ` +
-                    `Current ${expectedTimeLeft}min vs Dialog ${timeLeftMinutes}min`);
+                console.log(`[ZoneScanner] Time discrepancy detected for zone ${zoneId}`);
                 
                 // Calculate new capture time based on dialog info
-                currentZone.capturedAt = now - (this.cooldownDuration - (timeLeftMinutes * 60000));
+                const minutesToDeduct = this.cooldownMinutes - timeLeftMinutes;
+                currentZone.capturedAt = now - (minutesToDeduct * 60 * 1000);
+                
+                console.log(`[ZoneScanner] Updating capture time to: ${new Date(currentZone.capturedAt).toISOString()}`);
                 needsUpdate = true;
             }
         }
@@ -248,33 +286,22 @@ class ZoneScanner {
             ZoneManager.zones.set(zoneId, currentZone);
             ZoneManager.saveZones();
             console.log(`[ZoneScanner] Updated zone ${zoneId} data`);
+        } else {
+            console.log(`[ZoneScanner] No updates needed for zone ${zoneId}`);
         }
     }
     
-    updateZoneTime(zoneId, timeLeftMinutes) {
-        const now = Date.now();
-        const currentZone = ZoneManager.zones.get(zoneId);
-        if (!currentZone) return;
-        
-        if (timeLeftMinutes > 0) {
-            // Calculate new capture time based on time left
-            currentZone.capturedAt = now - (this.cooldownDuration - (timeLeftMinutes * 60000));
-            ZoneManager.zones.set(zoneId, currentZone);
-            ZoneManager.saveZones();
-            console.log(`[ZoneScanner] Updated time for zone ${zoneId}`);
-        }
-    }
-
     async fetchGroupTag(dialogId, groupName, zoneId, timeLeftMinutes) {
         this.isProcessingTag = true;
+        console.log(`[ZoneScanner] Starting tag fetch for ${groupName}`);
         
         try {
-            console.log(`[ZoneScanner] Fetching tag for: ${groupName}`);
-            
             // Send dialog response to open group stats
+            console.log(`[ZoneScanner] Sending dialog response to open group stats`);
             await this.sendDialogResponse(dialogId, 1, 1, 0);
             
             // Wait for group stats dialog
+            console.log(`[ZoneScanner] Waiting for group stats dialog...`);
             const statsDialog = await this.waitForDialog(
                 d => this.cleanDialogText(d.title).toLowerCase().includes('group stats'),
                 5000
@@ -285,27 +312,28 @@ class ZoneScanner {
                 return;
             }
             
+            console.log(`[ZoneScanner] Received group stats dialog for ${groupName}`);
+            
             // Extract tag from stats
             const statsClean = this.cleanDialogText(statsDialog.info);
-            const statsLines = statsClean.split('\n');
             let tag = null;
             
-            for (const line of statsLines) {
-                const tagMatch = line.match(/- Tag:\s*(\S+)/i);
-                if (tagMatch && tagMatch[1]) {
-                    tag = tagMatch[1].trim();
-                    break;
-                }
+            const tagMatch = statsClean.match(/- Tag:\s*(\S+)/i);
+            if (tagMatch && tagMatch[1]) {
+                tag = tagMatch[1].trim();
+                console.log(`[ZoneScanner] Extracted tag for ${groupName}: ${tag}`);
+            } else {
+                console.log(`[ZoneScanner] Tag not found for ${groupName}`);
+                console.log(`Dialog content:\n${statsClean}`);
             }
             
             if (tag) {
                 ZoneManager.setGroupTag(groupName, tag);
-                console.log(`[ZoneScanner] Extracted tag for ${groupName}: ${tag}`);
-            } else {
-                console.log(`[ZoneScanner] Tag not found for ${groupName}`);
+                console.log(`[ZoneScanner] Saved tag for ${groupName}`);
             }
             
             // Update zone data after tag extraction
+            console.log(`[ZoneScanner] Updating zone data after tag fetch`);
             this.updateZoneData(zoneId, groupName, timeLeftMinutes);
             
         } catch (error) {
@@ -313,12 +341,15 @@ class ZoneScanner {
         } finally {
             this.isProcessingTag = false;
             this.currentZoneIndex++;
+            console.log(`[ZoneScanner] Tag fetch completed for ${groupName}`);
         }
     }
 
     async sendDialogResponse(dialogId, response, listItem, inputText) {
         try {
             const botcmd = `sendDialogResponse|${dialogId}|${response}|${listItem}|${inputText}`;
+            console.log(`[ZoneScanner] Sending dialog response: ${botcmd}`);
+            
             await axios.post(
                 `http://${config.raksampHost}:${config.scannerPort}/`,
                 `botcommand=${encodeURIComponent(botcmd)}`,
@@ -331,14 +362,19 @@ class ZoneScanner {
 
     waitForDialog(filter, timeout) {
         return new Promise((resolve) => {
+            console.log(`[ZoneScanner] Setting up dialog waiter (timeout: ${timeout}ms)`);
+            
             const handler = (dialog) => {
+                console.log(`[ZoneScanner] Received dialog in waiter: ${dialog.title}`);
                 if (filter(dialog)) {
+                    console.log(`[ZoneScanner] Dialog matches filter`);
                     cleanup();
                     resolve(dialog);
                 }
             };
             
             const timer = setTimeout(() => {
+                console.log(`[ZoneScanner] Dialog wait timed out`);
                 cleanup();
                 resolve(null);
             }, timeout);
@@ -346,6 +382,7 @@ class ZoneScanner {
             const cleanup = () => {
                 clearTimeout(timer);
                 this.client.off('scanner_dialog', handler);
+                console.log(`[ZoneScanner] Cleaned up dialog waiter`);
             };
             
             this.client.on('scanner_dialog', handler);
