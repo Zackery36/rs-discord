@@ -8,7 +8,6 @@ module.exports = (client, config) => {
 
     router.post('/', async (req, res) => {
         const raw = req.body.message || '';
-        console.log('[SA:MP→Discord] raw:', raw);
 
         // Append to chat.log
         fs.appendFile(chatLogFile, `${new Date().toISOString()} ${raw}\n`, err => {
