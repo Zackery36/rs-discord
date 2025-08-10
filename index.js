@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const config = require('./config.json');
+const ZoneScanner = require('./handlers/zoneScanner'); // Import the class
 
 // Ensure logs directory exists
 if (!fs.existsSync('./logs')) fs.mkdirSync('./logs');
@@ -34,7 +35,6 @@ require('./handlers/connectionHandler')(client);
 
 // Load handlers for scanner bot
 require('./handlers/scannerLoginHandler')(client); // Scanner bot login handler
-require('./handlers/zoneScanner')(client); // Zone scanner
 
 // Cooldown checker
 const ZoneManager = require('./utils/ZoneManager');
@@ -66,8 +66,8 @@ client.once('ready', () => {
         lastAttackableState.set(zoneId, ZoneManager.isAttackable(zoneId));
     }
     
-    // Start zone scanner
-    const zoneScanner = require('./handlers/zoneScanner')(client);
+    // CORRECTED: Instantiate ZoneScanner with 'new'
+    const zoneScanner = new ZoneScanner(client);
     zoneScanner.start();
     
     // Set up interval checks
