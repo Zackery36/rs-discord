@@ -21,7 +21,7 @@ class ZoneManager {
     }
 
     // Get current time in UTC milliseconds
-    static getCurrentTime() {
+     getCurrentTime() {
         return new Date().getTime();
     }
 
