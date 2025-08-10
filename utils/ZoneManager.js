@@ -13,7 +13,6 @@ class ZoneManager {
         this.countdownEnabled = false;
         this.cooldownDuration = 6 * 60 * 60 * 1000; // 6 hours
         this.attackWindow = 60 * 60 * 1000; // 1 hour
-        this.cycleDuration = this.cooldownDuration + this.attackWindow; // 7 hours
         this.filePath = path.join(__dirname, '../data/zones.json');
         this.cZonesPath = path.join(__dirname, '../data/czones.json');
         this.zonePositions = new Map();
@@ -29,14 +28,13 @@ class ZoneManager {
         if (fs.existsSync(this.filePath)) {
             try {
                 const data = JSON.parse(fs.readFileSync(this.filePath));
-                
-                // Migrate old data format if needed
                 this.zones = new Map();
+                
                 if (data.zones) {
                     for (const [zoneId, zoneData] of data.zones) {
-                        // Remove attackableAt if it exists
-                        if (zoneData && zoneData.attackableAt) {
-                            delete zoneData.attackableAt;
+                        // Migrate old data: create attackableAt if missing
+                        if (zoneData.capturedAt && !zoneData.attackableAt) {
+                            zoneData.attackableAt = zoneData.capturedAt + this.cooldownDuration;
                         }
                         this.zones.set(zoneId, zoneData);
                     }
@@ -56,7 +54,7 @@ class ZoneManager {
                 }
                 
                 this.zoneCycles = new Map(data.zoneCycles || []);
-                console.log(`[ZoneManager] Loaded ${this.zones.size} zones and ${this.groupTags.size} group tags`);
+                console.log(`[ZoneManager] Loaded ${this.zones.size} zones`);
             } catch (e) {
                 console.error('[ZoneManager] Failed to load zones:', e);
             }
@@ -81,14 +79,8 @@ class ZoneManager {
         const groupZonesArray = Array.from(this.groupZones.entries())
             .map(([group, zones]) => [group, Array.from(zones)]);
         
-        // Save without attackableAt
-        const zonesToSave = Array.from(this.zones.entries()).map(([id, zone]) => {
-            const { attackableAt, ...rest } = zone;
-            return [id, rest];
-        });
-
         const data = {
-            zones: zonesToSave,
+            zones: Array.from(this.zones.entries()),
             groupTags: Array.from(this.groupTags.entries()),
             groupZones: groupZonesArray,
             zoneCycles: Array.from(this.zoneCycles.entries()),
@@ -99,7 +91,7 @@ class ZoneManager {
         };
         
         fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2));
-        console.log(`[ZoneManager] Saved zones data with ${this.groupTags.size} group tags`);
+        console.log(`[ZoneManager] Saved zones data`);
     }
 
     saveCZonePositions() {
@@ -120,10 +112,11 @@ class ZoneManager {
             }
         }
         
-        // Update zone ownership with only capture time
+        // Update zone with capture time and attackable time
         this.zones.set(zoneId, {
             owner: attackerGroup,
-            capturedAt: now
+            capturedAt: now,
+            attackableAt: now + this.cooldownDuration
         });
         
         // Add zone to attacker's groupZones
@@ -293,32 +286,22 @@ class ZoneManager {
 
     isAttackable(zoneId) {
         const zone = this.zones.get(zoneId);
-        if (!zone || !zone.capturedAt) return false;
+        if (!zone || !zone.attackableAt) return false;
         
         const now = Date.now();
-        const elapsed = now - zone.capturedAt;
-        
-        // Calculate position in the current cycle (0-7 hours)
-        const positionInCycle = elapsed % this.cycleDuration;
-        
-        // Zone is attackable if it's in the attack window (last hour of the cycle)
-        return positionInCycle >= this.cooldownDuration;
+        return now >= zone.attackableAt && now < zone.attackableAt + this.attackWindow;
     }
 
     getTimeUntilAttackable(zoneId) {
         const zone = this.zones.get(zoneId);
-        if (!zone || !zone.capturedAt) return null;
+        if (!zone || !zone.attackableAt) return null;
         
         const now = Date.now();
-        const elapsed = now - zone.capturedAt;
-        const positionInCycle = elapsed % this.cycleDuration;
-        
-        if (positionInCycle >= this.cooldownDuration) {
+        if (this.isAttackable(zoneId)) {
             return 0; // Already attackable
         }
         
-        // Time until attack window starts
-        return this.cooldownDuration - positionInCycle;
+        return Math.max(0, zone.attackableAt - now);
     }
 
     getAttackableZonesByGroup() {

@@ -17,7 +17,8 @@ module.exports = (client, config) => {
             
             if (action === 'takes over') {
                 // Handle capture
-                const attackableAt = ZoneManager.recordZoneCapture(zoneId, groupName, defenderGroup);
+                const captureTime = ZoneManager.recordZoneCapture(zoneId, groupName, defenderGroup);
+                const attackableAt = captureTime + ZoneManager.cooldownDuration;
                 
                 // Notify Discord
                 const channel = client.channels.cache.get(config.zoneChannelId);
@@ -33,8 +34,16 @@ module.exports = (client, config) => {
                     channel.send({ embeds: [embed] });
                 }
             } else if (action === 'keeps' && defenderGroup) {
-                // Handle defense - record with previous owner's name
-                const attackableAt = ZoneManager.recordZoneCapture(zoneId, defenderGroup, defenderGroup);
+                // Handle defense - reset attackable time
+                const now = Date.now();
+                const attackableAt = now + ZoneManager.cooldownDuration;
+                
+                // Update zone with new attackable time
+                ZoneManager.zones.set(zoneId, {
+                    ...currentZone,
+                    attackableAt: attackableAt
+                });
+                ZoneManager.saveZones();
                 
                 // Notify Discord
                 const channel = client.channels.cache.get(config.zoneChannelId);
