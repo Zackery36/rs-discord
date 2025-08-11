@@ -182,6 +182,13 @@ class ZoneScanner {
             const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
             timeLeftMinutes = hours * 60 + minutes;
         }
+
+        // NEW FEATURE: Skip zones with less than 1 hour remaining
+        if (timeLeftMinutes !== null && timeLeftMinutes < 60) {
+            console.log(`[ZoneScanner] Skipping zone ${expectedZoneId} (${timeLeftMinutes} minutes until attackable)`);
+            this.currentZoneIndex++;
+            return;
+        }
         
         // Handle "no members online" case
         if (!newOwner) {
